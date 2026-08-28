@@ -8,6 +8,9 @@ const fallback: HardwareProfile = {
   memoryGb: 0,
   osVersion: 'Development preview',
   preferredBackend: 'Auto',
+  accelerators: [],
+  supportsMetal: false,
+  supportsCuda: false,
 };
 
 export async function getHardwareProfile(): Promise<HardwareProfile> {

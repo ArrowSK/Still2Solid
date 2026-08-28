@@ -8,6 +8,13 @@ export type Compatibility =
   | 'unsupported'
   | 'license-restricted';
 
+export interface HardwareAccelerator {
+  type: 'apple-unified' | 'nvidia' | 'other';
+  name: string;
+  memoryGb: number | null;
+  backend: 'metal' | 'cuda' | 'other';
+}
+
 export interface HardwareProfile {
   platform: string;
   architecture: string;
@@ -15,6 +22,9 @@ export interface HardwareProfile {
   memoryGb: number;
   osVersion: string;
   preferredBackend: string;
+  accelerators: HardwareAccelerator[];
+  supportsMetal: boolean;
+  supportsCuda: boolean;
 }
 
 export interface ModelManifest {
@@ -29,6 +39,26 @@ export interface ModelManifest {
   supportsPbr: boolean;
   diskSizeMb: number;
   stages: Array<{ id: string; label: string }>;
+}
+
+export type ModelAvailability = 'bundled' | 'catalog-only' | 'gated';
+
+export interface ModelCandidate {
+  manifest: ModelManifest;
+  summary: string;
+  sourceLabel: string;
+  availability: ModelAvailability;
+  hardwareNotes: string[];
+  licenseNote: string;
+}
+
+export interface ModelAssessment {
+  modelId: string;
+  compatibility: Compatibility;
+  score: number;
+  label: string;
+  reasons: string[];
+  caveats: string[];
 }
 
 export interface GenerationRequest {
