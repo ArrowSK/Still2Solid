@@ -1,0 +1,90 @@
+name: M8 finalize UI wiring
+
+on:
+  push:
+    branches: [branding/app-logo]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branding/app-logo
+          fetch-depth: 0
+      - name: Wire SF3D into the existing production flow
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('apps/desktop/ui/src/App.svelte')
+          text = p.read_text()
+
+          replacements = [
+              ("import ModelManager from './lib/ModelManager.svelte';", "import ModelManager from './lib/ModelManagerM8.svelte';"),
+              ("import { TripoSRAdapter } from './lib/triposrAdapter';", "import { Sf3DAdapter } from './lib/sf3dAdapter';\n  import { TripoSRAdapter } from './lib/triposrAdapter';"),
+              ("  const triposrAdapter = new TripoSRAdapter();", "  const triposrAdapter = new TripoSRAdapter();\n  const sf3dAdapter = new Sf3DAdapter();"),
+          ]
+          for old, new in replacements:
+              if old in text:
+                  text = text.replace(old, new, 1)
+
+          old_block = '''  $: triposrRuntime = runtimeStates.find((runtime) => runtime.modelId === 'triposr');
+  $: triposrAssessment = modelAssessments.find((assessment) => assessment.modelId === 'triposr');
+  $: explicitTripo = preferredProductionModelId === 'triposr' && triposrAssessment?.compatibility !== 'unsupported';
+  $: automaticTripo = !preferredProductionModelId && automaticRecommendation?.modelId === 'triposr';
+  $: activeAdapter = triposrRuntime?.canGenerate && (explicitTripo || automaticTripo) ? triposrAdapter : mockAdapter;'''
+          new_block = '''  $: triposrRuntime = runtimeStates.find((runtime) => runtime.modelId === 'triposr');
+  $: sf3dRuntime = runtimeStates.find((runtime) => runtime.modelId === 'sf3d');
+  $: selectedProductionId = productionAssessment?.modelId ?? '';
+  $: selectedRuntime = runtimeStates.find((runtime) => runtime.modelId === selectedProductionId);
+  $: activeAdapter = selectedProductionId === 'triposr' && triposrRuntime?.canGenerate
+    ? triposrAdapter
+    : selectedProductionId === 'sf3d' && sf3dRuntime?.canGenerate
+      ? sf3dAdapter
+      : mockAdapter;'''
+          if old_block not in text:
+              raise SystemExit('active-adapter anchor changed')
+          text = text.replace(old_block, new_block, 1)
+
+          text = text.replace("jobTimingProfile = adapterForJob.manifest.id === 'triposr' ? loadTimingProfile(contextForJob) : null;", "jobTimingProfile = adapterForJob.manifest.id !== 'mock3d' ? loadTimingProfile(contextForJob) : null;", 1)
+          text = text.replace("const isProduction = adapterForJob.manifest.id === 'triposr';", "const isProduction = adapterForJob.manifest.id !== 'mock3d';", 1)
+          text = text.replace("if (generated.modelId === 'triposr') {", "if (generated.modelId !== 'mock3d') {", 1)
+
+          text = text.replace('<svelte:head><title>Still2Solid · M6</title></svelte:head>', '<svelte:head><title>Still2Solid · M8</title></svelte:head>', 1)
+          text = text.replace('<div class="milestone">M6 · Print prep</div>', '<div class="milestone">M8 · Multi-model local</div>', 1)
+          text = text.replace("{#if activeAdapter.manifest.id === 'triposr'}\n          <span>Ready for local production inference</span>\n          <strong>TripoSR</strong>", "{#if activeAdapter.manifest.id !== 'mock3d'}\n          <span>Ready for local production inference</span>\n          <strong>{activeAdapter.manifest.name}</strong>", 1)
+          text = text.replace("<small>Verified runtime installed · timing improves automatically with successful runs</small>", "<small>Verified local runtime · timing improves automatically with successful runs</small>", 1)
+          text = text.replace("{triposrRuntime?.installed ? 'Runtime not selected or not ready' : 'Open Model Manager to install a runtime'}", "{selectedRuntime?.installed ? 'Runtime not selected or not ready' : 'Open Model Manager to install a runtime'}", 1)
+
+          text = text.replace("{activeAdapter.manifest.id === 'triposr' ? 'Production adapter' : 'Development fallback'}", "{activeAdapter.manifest.id !== 'mock3d' ? 'Production adapter' : 'Development fallback'}", 1)
+          text = text.replace("{#if activeAdapter.manifest.id === 'triposr'}\n                <p><strong>TripoSR is installed, checksum-verified and selected.</strong> Each generation runs in a one-shot isolated local process and unloads when it finishes.</p>", "{#if activeAdapter.manifest.id !== 'mock3d'}\n                <p><strong>{activeAdapter.manifest.name} is installed, verified and selected.</strong> Each generation runs in a one-shot isolated local process and unloads when it finishes.</p>", 1)
+          text = text.replace("{#if triposrRuntime}<p>{triposrRuntime.detail}</p>{/if}", "{#if selectedRuntime}<p>{selectedRuntime.detail}</p>{/if}", 1)
+
+          text = text.replace("{activeAdapter.manifest.id === 'triposr' ? 'Production runtime' : preferredIsUsable ? 'Preferred candidate' : 'Production recommendation'}", "{activeAdapter.manifest.id !== 'mock3d' ? 'Production runtime' : preferredIsUsable ? 'Preferred candidate' : 'Production recommendation'}", 1)
+          text = text.replace("{activeAdapter.manifest.id === 'triposr' ? 'TripoSR · ready' : productionCandidate?.manifest.name ?? 'No safe recommendation'}", "{activeAdapter.manifest.id !== 'mock3d' ? `${activeAdapter.manifest.name} · ready` : productionCandidate?.manifest.name ?? 'No safe recommendation'}", 1)
+          text = text.replace("{activeAdapter.manifest.id === 'triposr' ? 'Verified local install' : productionAssessment?.label ?? 'Inspect hardware constraints'}", "{activeAdapter.manifest.id !== 'mock3d' ? 'Verified local install' : productionAssessment?.label ?? 'Inspect hardware constraints'}", 1)
+
+          text = text.replace("{#if activeAdapter.manifest.id === 'triposr'}", "{#if activeAdapter.manifest.id !== 'mock3d'}", 1)
+          text = text.replace("{generating ? 'Generating…' : activeAdapter.manifest.id === 'triposr' ? 'Generate 3D locally' : 'Generate Mock3D'}", "{generating ? 'Generating…' : activeAdapter.manifest.id !== 'mock3d' ? 'Generate 3D locally' : 'Generate Mock3D'}", 1)
+
+          text = text.replace("jobAdapter?.manifest.id === 'triposr'", "jobAdapter?.manifest.id !== 'mock3d'")
+          text = text.replace("result.modelId === 'triposr'", "result.modelId !== 'mock3d'")
+          text = text.replace("Install and select TripoSR in Model Manager to enable production inference, canonical production assets and learned local timing.", "Install and select a supported production model in Model Manager to enable production inference, canonical production assets and learned local timing.", 1)
+          text = text.replace("<span>Still2Solid M6</span>", "<span>Still2Solid M8</span>", 1)
+          text = text.replace("Local-first · canonical GLB + print prep + 3MF · learned ETA stays local · no telemetry", "Local-first · TripoSR + opt-in SF3D · bundled runtime · canonical GLB + print prep · no telemetry", 1)
+
+          p.write_text(text)
+          PY
+      - name: Commit and remove helper
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/ui/src/App.svelte
+          git rm .github/workflows/m8-finalize-ui.yml
+          git commit -m "M8: wire Stable Fast 3D into generation UI"
+          git push origin HEAD:branding/app-logo
