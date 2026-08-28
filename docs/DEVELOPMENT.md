@@ -1,6 +1,6 @@
 # Development
 
-Still2Solid is intentionally split so UI work, model policy, native trust decisions, inference and export/print logic can evolve without turning into one large script.
+Still2Solid is intentionally split so UI work, model policy, native trust decisions, inference and export/print logic can evolve without becoming one large script.
 
 ## Repository map
 
@@ -10,12 +10,16 @@ Still2Solid/
 │  ├─ public/brand/           in-app branding assets
 │  └─ src/lib/                model, runtime, timing, export and print-prep modules
 ├─ src-tauri/                 trusted Rust/Tauri core
-│  ├─ icons/                  desktop application icon
-│  └─ src/                    hardware probe, installer, worker/process bridge
-├─ workers/                   isolated production model worker(s)
-├─ assets/branding/           repository/readme brand artwork
+│  ├─ icons/                  generated native application icons
+│  ├─ resources/python/       prepared bundled Python resource (build output, not source)
+│  └─ src/                    hardware probe, installers, worker/process bridges
+├─ workers/
+│  ├─ triposr/                isolated TripoSR worker assets
+│  └─ sf3d/                   gated SF3D installer + worker
+├─ scripts/                   release/runtime preparation scripts
+├─ assets/branding/           canonical repository/readme artwork
 ├─ docs/                      user, architecture, milestone and policy docs
-└─ .github/workflows/         CI
+└─ .github/workflows/         CI and release workflows
 ```
 
 ## Local setup
@@ -23,7 +27,7 @@ Still2Solid/
 See [Getting Started](GETTING_STARTED.md) for prerequisites. The short version is:
 
 ```bash
-npm install
+npm ci
 npm run tauri:dev
 ```
 
@@ -41,17 +45,21 @@ npm run tauri:build
 Native checks:
 
 ```bash
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo check --locked --manifest-path src-tauri/Cargo.toml
+cargo test --locked --manifest-path src-tauri/Cargo.toml
 ```
 
-Worker syntax check:
+Worker/runtime syntax checks:
 
 ```bash
-python3 -m py_compile workers/triposr_worker.py
+python3 -m py_compile \
+  workers/triposr/worker.py \
+  workers/sf3d/install.py \
+  workers/sf3d/worker.py \
+  scripts/prepare_python_runtime.py
 ```
 
-CI deliberately does **not** download multi-gigabyte production weights or run full inference. Expensive hardware/model validation belongs in explicit benchmark work, not ordinary pull-request CI.
+Ordinary CI deliberately does **not** download multi-gigabyte production model weights or run full inference. Expensive model/hardware validation belongs in explicit benchmark work.
 
 ## Change philosophy
 
@@ -61,59 +69,32 @@ Examples:
 
 - a viewer bug should not trigger a runtime redesign;
 - an MPS problem should not weaken checksum verification;
-- an OBJ conversion limitation should not mutate the canonical GLB;
+- an OBJ limitation should not mutate the canonical GLB;
 - a print-repair failure should not silently remesh the production master;
-- a background-detection false positive should be fixed in the heuristic/UI, not by making foreground isolation mandatory.
+- a background-detection false positive should be fixed in the heuristic/UI rather than making foreground isolation mandatory;
+- an SF3D install failure must not disable the working TripoSR or Mock3D paths.
 
 Prefer small, testable changes with an obvious rollback boundary.
 
 ## UI architecture
 
-The Svelte UI owns interaction and presentation:
+The Svelte UI owns interaction and presentation: file selection/drop, simple/Advanced controls, Background guidance, model/runtime state presentation, progress/ETA, Three.js preview, canonical-asset inspection, derived exports and print-preparation controls.
 
-- file selection/drop;
-- simple vs Advanced controls;
-- Background check guidance;
-- model/runtimes status presentation;
-- generation progress/ETA presentation;
-- Three.js preview;
-- canonical-asset inspection;
-- derived export UI;
-- print-preparation controls.
-
-It does not own trusted model installation decisions or long-lived native process management.
+It does not own trusted model installation decisions or long-lived process management.
 
 ### Background check
 
-`backgroundAnalysis.ts` is deliberately not an AI segmentation service. It downsamples the selected local image and inspects transparency plus edge/centre colour statistics.
+`backgroundAnalysis.ts` is deliberately not a cloud segmentation service. It downsamples the selected local image and inspects transparency plus edge/centre colour statistics. `BackgroundAdvisor.svelte` turns that result into guidance and binds to the same `backgroundRemoval` setting used by Advanced mode.
 
-`BackgroundAdvisor.svelte` turns that result into humane guidance and binds to the same `backgroundRemoval` generation setting used by Advanced mode.
-
-Rules for future changes:
-
-- never upload the image just to classify the background;
-- keep the check fast enough to feel instantaneous;
-- make uncertainty visible;
-- never prevent the user from overriding the suggestion;
-- add pure pixel-level tests for heuristic changes.
+Future changes must keep the check local, fast, uncertainty-aware and user-overridable.
 
 ## Model adapter contract
 
-Model-specific generation logic is hidden behind a common adapter interface. The UI should not need model-specific branches for every inference detail.
-
-A production adapter should provide:
-
-- manifest/stage metadata;
-- generation input contract;
-- progress events;
-- cancellation;
-- structured result/error information.
-
-Model installation/runtime state remains a separate concern.
+Model-specific generation logic is hidden behind a common adapter interface. Production adapters currently include TripoSR and optional Stable Fast 3D. Each adapter provides manifest/stage metadata, generation input, progress events, cancellation and structured results/errors. Installation/runtime state remains a separate concern.
 
 ## Trusted Rust boundary
 
-The Rust/Tauri core owns operations that should not be casually delegated to downloaded model code:
+The Rust/Tauri core owns operations that should not be delegated to downloaded model code:
 
 - hardware probing;
 - allowlisted runtime installation;
@@ -122,109 +103,81 @@ The Rust/Tauri core owns operations that should not be casually delegated to dow
 - staging and activation;
 - child-process lifecycle;
 - cancellation/cleanup;
-- app-local filesystem paths.
+- application-local filesystem paths.
 
-When expanding this boundary, prefer an explicit narrow command over exposing generic shell/process/filesystem capability to the UI.
+Prefer narrow commands over generic shell/process/filesystem capability in the UI.
 
 ## Production worker boundary
 
-The TripoSR worker is a one-shot process. It should:
+Production workers are one-shot processes. They must receive a bounded job description, use installed/verified local assets, avoid model/code downloads during inference, emit structured progress/results, be killable by the trusted host and exit after each job.
 
-1. receive a bounded job description;
-2. use only installed/pinned local runtime assets;
-3. avoid model/code downloads during inference;
-4. emit structured progress/results;
-5. exit after the job;
-6. be killable by the trusted host process.
-
-Do not replace this with a persistent localhost FastAPI/Flask server for convenience.
+Do not replace this with a persistent localhost FastAPI/Flask model server for convenience.
 
 ## Model/runtime changes
 
 Before changing a production pin:
 
 1. review the upstream licence again;
-2. record the exact source/model revision;
-3. calculate/verify immutable hashes;
+2. record an immutable source/model revision;
+3. calculate/verify required integrity hashes;
 4. review new dependencies and their licences;
-5. confirm `trust_remote_code` is not required;
+5. confirm arbitrary remote code is not required;
 6. test staging failure and cleanup;
-7. update `THIRD_PARTY_NOTICES.md`, model docs and tests as required.
+7. update third-party notices, model docs and deterministic tests.
+
+For conditional/gated models, also verify that user acceptance remains explicit and credentials are not persisted.
 
 See [Model Licence Policy](MODEL_LICENSE_POLICY.md).
 
+## Bundled Python runtime
+
+M7 prepares platform-specific Python 3.12 standalone artifacts from the immutable metadata in `scripts/python-runtime.json`. `scripts/prepare_python_runtime.py` verifies SHA-256 before extraction into Tauri resources.
+
+Do not commit the extracted runtime tree. Packaged builds carry it as a generated resource. Model installers then create their own private environments from that verified base interpreter.
+
+Changing a Python runtime artifact requires updating its filename/checksum metadata and re-running the bundled-runtime CI check.
+
 ## Timing and ETA
 
-M4 timing profiles are local and keyed by the conditions that materially affect runtime:
-
-- hardware identity;
-- model/version;
-- quality;
-- backend;
-- foreground-isolation setting.
-
-Only successful runs are recorded. Failed/cancelled jobs must not train the profile. Keep the stored history bounded and free of source-image names/content.
+Timing profiles remain local and are keyed by hardware identity, model/version, quality, backend and foreground-isolation setting. Only successful runs are recorded; failed/cancelled jobs must not train the profile. Stored history remains bounded and does not contain source-image content.
 
 ## Canonical assets and export
 
-The validated production GLB is the canonical master.
-
-Derived exports should be pure/non-destructive transformations:
-
-- GLB: exact bytes;
-- OBJ package: compatibility conversion;
-- raw STL: geometry-only conversion;
-- Print Prep: separate geometry copy;
-- 3MF/prepared STL: derived from the prepared copy.
+The validated production GLB is the canonical master. Derived exports are non-destructive: exact GLB, OBJ package, raw STL, a separate Print Prep geometry copy, and 3MF/prepared STL from that prepared copy.
 
 Never make a lossy export the new internal master.
 
 ## Print preparation
 
-Print repair is deliberately conservative. Any future repair algorithm should prefer “repair incomplete” over fabricating major missing geometry.
+Print repair is deliberately conservative. Future repair algorithms should prefer “repair incomplete” over fabricating major missing geometry. Tests should cover topology classification, winding, degenerates, hole handling, scaling/orientation, 3MF structure and STL layout.
 
-Tests should cover at least:
+## CI
 
-- topology classification;
-- winding consistency;
-- degenerates;
-- hole handling;
-- scaling/orientation;
-- 3MF structure;
-- STL binary layout.
+The main workflow validates:
 
-## Tests
+- `npm ci`, Svelte/TypeScript checks, Vitest and Vite build;
+- Python syntax for both production workers/installers and bundled-runtime preparation;
+- locked Rust check/tests on Apple-Silicon macOS CI;
+- download/checksum/interpreter validation for one pinned Linux bundled Python artifact.
 
-Good tests focus on deterministic logic:
-
-- compatibility/recommendation policy;
-- timing-profile statistics;
-- GLB header/asset helpers;
-- background heuristic;
-- print topology/repair/export structures;
-- Rust parsing/install state logic.
-
-Do not make ordinary CI depend on a GPU, a model download or a particular external model host being online.
+Release CI separately prepares the target Python runtime and invokes Tauri bundling for Apple-Silicon macOS, Windows x64 and Linux x64.
 
 ## Pull-request checklist
 
-Before opening/merging a PR:
+Before merging a release-bound change:
 
-- [ ] The change has one clear purpose.
 - [ ] Existing working behavior is preserved unless intentionally changed.
-- [ ] User-facing wording is understandable without reading source code.
+- [ ] User-facing wording matches implemented behavior.
 - [ ] Security/privacy boundaries are not weakened.
-- [ ] Model/licence metadata is updated if relevant.
-- [ ] Tests cover deterministic new logic.
-- [ ] `npm run check` passes.
-- [ ] `npm run test` passes.
-- [ ] `npm run build` passes.
-- [ ] Rust check/tests pass when Rust changed — and preferably for every release-bound PR.
-- [ ] Worker syntax validation passes when worker code changed.
-- [ ] Documentation matches what is actually implemented, not what is merely planned.
+- [ ] Model/licence metadata is current where relevant.
+- [ ] Lockfiles remain synchronized.
+- [ ] `npm run check`, tests and build pass.
+- [ ] Locked Rust check/tests pass.
+- [ ] Worker/runtime syntax checks pass.
+- [ ] Documentation describes implemented state rather than a future plan.
 
 ## Releases
 
-The repository is currently pre-M7 from an end-user packaging perspective. Do not present an unsigned development build as a polished installer release.
+M7 packaging infrastructure is implemented. Do not nevertheless call a build a signed public release until the release workflow has succeeded for the intended tag, required signing/notarization credentials have been supplied, produced installers have been tested on clean target systems and the release SBOM/licence review has been completed.
 
-M7 should establish the reproducible package/sign/notarize/release workflow and remove the ordinary end-user dependency on a separately installed Python runtime.
+See [M7](M7.md), [M8](M8.md) and [Roadmap](ROADMAP.md).
