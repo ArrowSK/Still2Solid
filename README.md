@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/branding/still2solid-logo.webp" alt="Still2Solid" width="460">
+</p>
+
 # Still2Solid
 
 Local-first image-to-3D desktop application.
