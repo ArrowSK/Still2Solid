@@ -17,8 +17,9 @@ M1 through M8 are implemented in the repository:
 - bundled, checksum-verified Python runtime preparation and active Tauri packaging;
 - cross-platform release workflow with macOS signing/notarization hooks;
 - an audited second production adapter for gated Stable Fast 3D.
+- in-app storage accounting, model/cache cleanup and complete-uninstall preparation.
 
-The remaining items are validation/operations rather than missing M1–M8 feature code: physical low-memory Apple-Silicon benchmarking and actually producing signed/notarized public artifacts with configured release credentials.
+The remaining items are validation/operations rather than missing M1–M8 feature code: physical low-memory Apple-Silicon benchmarking and Apple Developer signing/notarization for the published macOS distribution.
 
 ## Completed milestones
 

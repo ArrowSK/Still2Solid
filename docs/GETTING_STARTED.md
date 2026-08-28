@@ -2,9 +2,19 @@
 
 Still2Solid now has M1–M8 implementation in the repository. The source checkout is for development; normal release builds are designed to bundle their own pinned Python 3.12 runtime so end users are not asked to install Python, Conda or Homebrew.
 
-A public installer should still be treated as a release only after the release workflow has produced and validated the intended platform artifact and, where applicable, signing/notarization has completed.
+The current Apple Silicon macOS release is published through GitHub Releases. It carries its own pinned Python runtime; model weights are installed from inside the app. The current macOS build is unsigned, so first launch may require **System Settings → Privacy & Security → Open Anyway**.
 
 If you only want to understand the workflow, read the [User Guide](USER_GUIDE.md).
+
+## Installing the macOS release
+
+1. Open the repository **Releases** page and download the current Apple Silicon DMG.
+2. Open the DMG and drag **Still2Solid** to **Applications**.
+3. Launch Still2Solid normally. If Gatekeeper blocks the unsigned build, approve it once in **Privacy & Security**.
+4. Install or remove production models from **Models**.
+5. Use **Settings → Storage** for disk usage, model cleanup, cache cleanup and complete-uninstall preparation.
+
+A normal app update/replacement keeps downloaded models. For a complete uninstall, use **Settings → Storage → Prepare for uninstall** before moving Still2Solid to Trash.
 
 ## Building from source
 

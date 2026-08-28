@@ -77,6 +77,14 @@ Timing profiles are local and contain only technical execution context such as m
 
 Exports are created locally. Still2Solid does not upload GLB/OBJ/STL/3MF data during export. Derived export/print-preparation paths do not silently rewrite the canonical GLB master.
 
+## Storage cleanup and uninstall privacy
+
+Downloaded production models live in Still2Solid's application-data area rather than inside the application bundle. This keeps updates/reinstalls separate from multi-gigabyte model downloads.
+
+**Settings → Storage** exposes only app-scoped cleanup operations. The Rust side resolves Tauri application data/cache/config/local-data roots, validates that cleanup targets are Still2Solid-owned paths, and refuses unexpected paths before recursive deletion. The UI does not receive generic filesystem deletion capability.
+
+**Prepare for uninstall** first invokes the existing model uninstall paths, then removes Still2Solid-owned app data/cache and local `still2solid.*` preferences. User-exported model files saved outside Still2Solid's application-data directories are not part of cleanup.
+
 ## Content Security Policy
 
 The desktop webview uses an explicit Content Security Policy in Tauri configuration. Changes that broaden `script-src`, `connect-src` or other directives are security changes and require justification. Do not add `unsafe-eval`, broad remote script origins or arbitrary network endpoints simply to make a dependency convenient.
