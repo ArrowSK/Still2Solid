@@ -4,6 +4,16 @@
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
   import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+  import {
+    exportBinaryStl,
+    exportCanonicalGlb,
+    exportObjPackage,
+    formatAssetBytes,
+    inspectCanonicalGlb,
+    safeAssetBaseName,
+    type AssetExportFormat,
+    type CanonicalAssetInspection,
+  } from './assetExport';
 
   export let textureUrl = '';
   export let modelUrl = '';
@@ -22,6 +32,12 @@
   let appliedTexture: THREE.Texture | null = null;
   let loadedModelUrl = '';
   let viewerError = '';
+  let exportOpen = false;
+  let exportBusy: AssetExportFormat | '' = '';
+  let exportError = '';
+  let inspection: CanonicalAssetInspection | null = null;
+  let inspectionUrl = '';
+  let inspecting = false;
 
   function disposeMaterial(material: THREE.Material) {
     const candidate = material as THREE.MeshStandardMaterial;
@@ -98,6 +114,9 @@
   function showMock() {
     loadedModelUrl = '';
     viewerError = '';
+    inspection = null;
+    inspectionUrl = '';
+    exportOpen = false;
     if (productionModel) {
       scene.remove(productionModel);
       disposeObject(productionModel);
@@ -110,10 +129,28 @@
     }
   }
 
+  async function inspectProductionAsset(url: string) {
+    if (!url || inspectionUrl === url || inspecting) return;
+    inspectionUrl = url;
+    inspecting = true;
+    inspection = null;
+    try {
+      const next = await inspectCanonicalGlb(url);
+      if (url === modelUrl) inspection = next;
+    } catch (caught) {
+      if (url === modelUrl) viewerError = caught instanceof Error ? caught.message : 'Could not validate the generated GLB.';
+      inspectionUrl = '';
+    } finally {
+      inspecting = false;
+    }
+  }
+
   function loadProductionModel(url: string) {
     if (!scene || !url || loadedModelUrl === url) return;
     loadedModelUrl = url;
     viewerError = '';
+    exportError = '';
+    void inspectProductionAsset(url);
     const loader = new GLTFLoader();
     loader.load(
       url,
@@ -156,23 +193,7 @@
     setWireframe(productionModel ?? mockModel);
   }
 
-  async function exportGlb() {
-    if (modelUrl) {
-      try {
-        const response = await fetch(modelUrl);
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = exportFilename || 'still2solid.glb';
-        anchor.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } catch (caught) {
-        viewerError = caught instanceof Error ? caught.message : 'Could not export the generated GLB.';
-      }
-      return;
-    }
-
+  async function exportMockGlb() {
     if (!mockModel) return;
     const exporter = new GLTFExporter();
     exporter.parse(
@@ -190,6 +211,21 @@
       (error) => (viewerError = `Mock GLB export failed: ${error}`),
       { binary: true },
     );
+  }
+
+  async function runExport(format: AssetExportFormat) {
+    if (!modelUrl || exportBusy) return;
+    exportBusy = format;
+    exportError = '';
+    try {
+      if (format === 'glb') await exportCanonicalGlb(modelUrl, exportFilename);
+      else if (format === 'obj') await exportObjPackage(modelUrl, exportFilename);
+      else await exportBinaryStl(modelUrl, exportFilename);
+    } catch (caught) {
+      exportError = caught instanceof Error ? caught.message : 'Export failed.';
+    } finally {
+      exportBusy = '';
+    }
   }
 
   onMount(() => {
@@ -262,17 +298,114 @@
 <div class="viewer-shell">
   <div class="viewer" bind:this={host} aria-label={modelUrl ? 'Interactive generated 3D preview' : 'Interactive mock 3D preview'}></div>
   {#if viewerError}<div class="viewer-error" role="status">{viewerError}</div>{/if}
+
+  {#if modelUrl}
+    <div class="asset-strip">
+      <div class="asset-identity">
+        <span>Canonical master</span>
+        <strong>GLB 2.0</strong>
+      </div>
+      {#if inspection}
+        <div class="asset-facts">
+          <span>{formatAssetBytes(inspection.bytes)}</span>
+          <span>{inspection.meshes} {inspection.meshes === 1 ? 'mesh' : 'meshes'}</span>
+          <span>{inspection.materials} {inspection.materials === 1 ? 'material' : 'materials'}</span>
+          <span>{inspection.textures} {inspection.textures === 1 ? 'texture' : 'textures'}</span>
+        </div>
+      {:else if inspecting}
+        <div class="asset-facts"><span>Validating local asset…</span></div>
+      {/if}
+    </div>
+  {/if}
+
   <div class="viewer-toolbar">
     <span>Drag to rotate · scroll to zoom</span>
-    <button type="button" class="secondary" on:click={exportGlb}>{modelUrl ? 'Export GLB' : 'Export mock GLB'}</button>
+    {#if modelUrl}
+      <button type="button" class="secondary" on:click={() => (exportOpen = !exportOpen)}>{exportOpen ? 'Close export' : 'Export…'}</button>
+    {:else}
+      <button type="button" class="secondary" on:click={exportMockGlb}>Export mock GLB</button>
+    {/if}
   </div>
+
+  {#if modelUrl && exportOpen}
+    <section class="export-panel" aria-label="Export generated model">
+      <div class="export-intro">
+        <div>
+          <span class="export-eyebrow">M5 · NON-DESTRUCTIVE EXPORT</span>
+          <h3>Export {safeAssetBaseName(exportFilename)}</h3>
+        </div>
+        <p>Still2Solid keeps the generated GLB as the canonical master. Other formats are derived in memory and never replace it.</p>
+      </div>
+
+      <div class="export-grid">
+        <article>
+          <div><strong>GLB</strong><span>Best fidelity</span></div>
+          <p>Downloads the exact validated master produced by the local model, with embedded materials and textures unchanged.</p>
+          <button type="button" class="primary" disabled={!!exportBusy} on:click={() => runExport('glb')}>{exportBusy === 'glb' ? 'Exporting…' : 'Export GLB'}</button>
+        </article>
+
+        <article>
+          <div><strong>OBJ package</strong><span>Compatibility</span></div>
+          <p>ZIP containing OBJ, MTL, PNG base-colour/normal textures when available, plus an asset manifest. Legacy MTL cannot reproduce full PBR materials.</p>
+          <button type="button" class="secondary" disabled={!!exportBusy} on:click={() => runExport('obj')}>{exportBusy === 'obj' ? 'Converting…' : 'Export OBJ ZIP'}</button>
+        </article>
+
+        <article>
+          <div><strong>STL</strong><span>Geometry only</span></div>
+          <p>Binary STL for downstream mesh tools. STL stores no colour, texture or reliable unit metadata; print sizing and repair belong to M6.</p>
+          <button type="button" class="secondary" disabled={!!exportBusy} on:click={() => runExport('stl')}>{exportBusy === 'stl' ? 'Converting…' : 'Export STL'}</button>
+        </article>
+      </div>
+
+      {#if inspection}
+        <div class="inspection-grid">
+          <div><span>Vertices</span><strong>{inspection.vertices.toLocaleString()}</strong></div>
+          <div><span>Triangles</span><strong>{inspection.triangles.toLocaleString()}</strong></div>
+          <div><span>Bounds X</span><strong>{inspection.size.x.toFixed(3)}</strong></div>
+          <div><span>Bounds Y</span><strong>{inspection.size.y.toFixed(3)}</strong></div>
+          <div><span>Bounds Z</span><strong>{inspection.size.z.toFixed(3)}</strong></div>
+        </div>
+      {/if}
+
+      {#if exportError}<div class="export-error" role="status">{exportError}</div>{/if}
+    </section>
+  {/if}
 </div>
 
 <style>
   .viewer-shell { border: 1px solid var(--border); border-radius: 18px; overflow: hidden; background: #15181f; }
   .viewer { width: 100%; min-height: 320px; }
   .viewer :global(canvas) { display: block; width: 100%; }
-  .viewer-error { padding: 9px 14px; border-top: 1px solid #5c4141; color: #ffc0c0; background: #24191b; font-size: 12px; }
+  .viewer-error, .export-error { padding: 9px 14px; border-top: 1px solid #5c4141; color: #ffc0c0; background: #24191b; font-size: 12px; }
+  .asset-strip { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 14px; border-top: 1px solid var(--border); background: #12151b; }
+  .asset-identity { display: flex; align-items: baseline; gap: 8px; }
+  .asset-identity span, .asset-facts { color: var(--muted); font-size: 11px; }
+  .asset-identity strong { color: var(--accent-strong); font-size: 12px; }
+  .asset-facts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 12px; }
   .viewer-toolbar { display: flex; gap: 16px; align-items: center; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
-  @media (max-width: 620px) { .viewer-toolbar { align-items: stretch; flex-direction: column; } }
+  .export-panel { padding: 18px; border-top: 1px solid var(--border); background: #11141a; }
+  .export-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  .export-intro h3 { margin: 3px 0 0; color: var(--text); font-size: 18px; }
+  .export-intro p { max-width: 470px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .export-eyebrow { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; }
+  .export-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+  .export-grid article { display: flex; flex-direction: column; min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: #171a21; }
+  .export-grid article > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .export-grid article strong { font-size: 14px; }
+  .export-grid article span { color: var(--muted); font-size: 10px; }
+  .export-grid article p { flex: 1; margin: 9px 0 13px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+  .export-grid article button { width: 100%; padding: 9px 10px; }
+  .inspection-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: 12px; }
+  .inspection-grid > div { display: grid; gap: 3px; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; background: #15181e; }
+  .inspection-grid span { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .07em; }
+  .inspection-grid strong { font-size: 11px; }
+  @media (max-width: 760px) {
+    .export-grid { grid-template-columns: 1fr; }
+    .inspection-grid { grid-template-columns: repeat(2, 1fr); }
+    .export-intro { flex-direction: column; gap: 9px; }
+  }
+  @media (max-width: 620px) {
+    .viewer-toolbar, .asset-strip { align-items: stretch; flex-direction: column; }
+    .asset-facts { justify-content: flex-start; }
+  }
 </style>
