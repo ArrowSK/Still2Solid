@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import BackgroundAdvisor from './lib/BackgroundAdvisor.svelte';
   import ModelManager from './lib/ModelManagerM8.svelte';
+  import SettingsPanel from './lib/SettingsPanel.svelte';
   import ModelViewer from './lib/ModelViewer.svelte';
   import { getHardwareProfile } from './lib/hardware';
   import { modelCandidateById } from './lib/modelCatalog';
@@ -69,6 +70,7 @@
   let showGrid = true;
   let fileInput: HTMLInputElement;
   let modelManagerOpen = false;
+  let settingsOpen = false;
   let preferredProductionModelId = '';
   let modelAssessments: ModelAssessment[] = [];
   let runtimeStates: ModelRuntimeState[] = [];
@@ -303,7 +305,7 @@
   };
 </script>
 
-<svelte:head><title>Still2Solid · M8</title></svelte:head>
+<svelte:head><title>Still2Solid</title></svelte:head>
 
 <header class="topbar">
   <div>
@@ -312,7 +314,8 @@
   </div>
   <div class="top-actions">
     <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>
-    <div class="milestone">M8 · Multi-model local</div>
+    <button type="button" class="secondary model-manager-button" on:click={() => (settingsOpen = true)}>Settings</button>
+    <div class="milestone">v0.8.1</div>
   </div>
 </header>
 
@@ -535,7 +538,15 @@
   assessments={modelAssessments}
 />
 
+<SettingsPanel
+  bind:open={settingsOpen}
+  bind:preferredModelId={preferredProductionModelId}
+  bind:runtimeStates
+  platform={hardware.platform}
+  disabled={generating}
+/>
+
 <footer>
-  <span>Still2Solid M8</span>
+  <span>Still2Solid v0.8.1</span>
   <span>Local-first · TripoSR + opt-in SF3D · bundled runtime · canonical GLB + print prep · no telemetry</span>
 </footer>

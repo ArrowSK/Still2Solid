@@ -108,6 +108,8 @@ jobs:
 
           This release includes the macOS Apple Silicon package for M1/M2/M3/M4 Macs. Install it by opening the DMG and dragging Still2Solid to Applications. Python is bundled; production model weights are installed from inside the app when requested.
 
+          Settings → Storage shows Still2Solid's local disk usage and can remove downloaded models, clear cache, or prepare a complete uninstall before the app is moved to Trash. Normal upgrades intentionally keep downloaded models.
+
           ${SECURITY_NOTE}
 
           The application and packaging CI are validated. Performance on memory-constrained hardware remains hardware-dependent; the app therefore keeps its conservative model recommendations.
@@ -123,11 +125,3 @@ jobs:
               --notes-file /tmp/release-notes.md \
               --latest
           fi
-
-          # Remove the obsolete pre-release naming from the public repository.
-          LEGACY_TAG="v${VERSION}-family-preview"
-          if gh release view "$LEGACY_TAG" >/dev/null 2>&1; then
-            gh release delete "$LEGACY_TAG" --yes --cleanup-tag
-          fi
-
-          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v${VERSION}-family-preview" >/dev/null 2>&1 || true

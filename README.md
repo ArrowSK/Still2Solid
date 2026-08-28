@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ArrowSK/Still2Solid/releases/download/v0.8.0/Still2Solid_0.8.0_aarch64.dmg"><img alt="Download Still2Solid for macOS Apple Silicon" src="https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-111827?style=for-the-badge&logo=apple&logoColor=white"></a>
-  <a href="https://github.com/ArrowSK/Still2Solid/releases/tag/v0.8.0"><img alt="View GitHub Release" src="https://img.shields.io/badge/GitHub-v0.8.0-2f81f7?style=for-the-badge&logo=github&logoColor=white"></a>
+  <a href="https://github.com/ArrowSK/Still2Solid/releases/download/v0.8.1/Still2Solid_0.8.1_aarch64.dmg"><img alt="Download Still2Solid for macOS Apple Silicon" src="https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-111827?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://github.com/ArrowSK/Still2Solid/releases/tag/v0.8.1"><img alt="View GitHub Release" src="https://img.shields.io/badge/GitHub-v0.8.1-2f81f7?style=for-the-badge&logo=github&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.8.0" src="https://img.shields.io/badge/version-0.8.0-4d8dff">
+  <img alt="Version 0.8.1" src="https://img.shields.io/badge/version-0.8.1-4d8dff">
   <img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-6c7a89">
   <img alt="Local first" src="https://img.shields.io/badge/inference-local--first-19b5a5">
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-19b5a5">
@@ -25,13 +25,13 @@
 
 Still2Solid is a desktop image-to-3D application built around a deliberately simple workflow: choose an image, let the app assess the computer, generate locally, inspect the result and export it. The application is designed to stay understandable even though the model runtimes underneath it are not simple.
 
-> **Current state:** M1–M8 are implemented. **Still2Solid v0.8.0** is published on GitHub Releases for Apple Silicon macOS with a SHA-256 checksum. The current macOS build is unsigned; Apple Developer signing and notarization remain a distribution-hardening task rather than a separate product edition. The physical M1/8 GB benchmark remains an explicit validation task for performance guidance.
+> **Current state:** M1–M8 are implemented. **Still2Solid v0.8.1** is published on GitHub Releases for Apple Silicon macOS with a SHA-256 checksum. The current macOS build is unsigned; Apple Developer signing and notarization remain a distribution-hardening task rather than a separate product edition. The physical M1/8 GB benchmark remains an explicit validation task for performance guidance.
 
 ## Install on macOS
 
-For an Apple Silicon Mac, use the **Download** button above or open the [v0.8.0 release](https://github.com/ArrowSK/Still2Solid/releases/tag/v0.8.0).
+For an Apple Silicon Mac, use the **Download** button above or open the [v0.8.1 release](https://github.com/ArrowSK/Still2Solid/releases/tag/v0.8.1).
 
-1. Download `Still2Solid_0.8.0_aarch64.dmg`.
+1. Download `Still2Solid_0.8.1_aarch64.dmg`.
 2. Open the DMG.
 3. Drag **Still2Solid** to **Applications**.
 4. Launch it from Applications or Launchpad.
@@ -39,12 +39,13 @@ For an Apple Silicon Mac, use the **Download** button above or open the [v0.8.0 
 
 Python is bundled in the packaged app. Production model weights are installed from inside Still2Solid when you choose to install a model.
 
-To uninstall, quit Still2Solid and move it from **Applications** to **Trash**. If you want to reclaim the space used by downloaded models, uninstall those from the Model Manager first.
+For a normal app-only uninstall, quit Still2Solid and move it from **Applications** to **Trash**. Downloaded models are intentionally kept so reinstalling the app does not force multi-gigabyte downloads. For a complete uninstall, open **Settings → Storage → Prepare for uninstall** first. Still2Solid removes its downloaded models, app data, cache and local preferences; then quit the app and move it to Trash.
 
 ## What it does today
 
 - Local image selection and drag-and-drop workflow.
 - Hardware-aware Model Manager and conservative compatibility policy.
+- Settings → Storage with model removal, cache cleanup and a complete-uninstall preparation flow.
 - Production **TripoSR** adapter with immutable source/model revisions and checksum verification.
 - Optional **Stable Fast 3D** production adapter with explicit gated access and licence acceptance; it is never silently auto-selected.
 - One-shot isolated local inference workers — no localhost inference server.
@@ -127,7 +128,7 @@ Source images stay local. Generation runs locally. Still2Solid has no telemetry 
 | M6 | Complete | Print preparation, topology repair and 3MF. |
 | M7 | Complete in code | Bundled pinned Python runtime, active Tauri bundling, native icon set and cross-platform release workflow. |
 | M8 | Complete in code | Audited opt-in Stable Fast 3D adapter and multi-model generation path. |
-| macOS v0.8.0 | Published | Apple Silicon DMG and SHA-256 checksum are available from GitHub Releases. |
+| macOS v0.8.1 | Published | Apple Silicon DMG and SHA-256 checksum are available from GitHub Releases. |
 | Target-device validation | Open | Measure the physical M1/8 GB experience before changing its conservative recommendation. |
 | Apple signing/notarization | Open | Configure Developer ID signing and notarization for a frictionless first-launch experience. |
 

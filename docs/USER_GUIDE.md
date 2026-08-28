@@ -193,6 +193,18 @@ Generation, preview, background analysis, learned timing and print preparation a
 
 See [Security & Privacy](SECURITY_PRIVACY.md) for the exact boundary.
 
+## 11. Storage and uninstall
+
+Open **Settings → Storage** to see how much local space Still2Solid is using. The panel separates downloaded model runtimes, cache and other application data.
+
+- **Remove downloaded models** removes installed TripoSR and Stable Fast 3D runtimes/weights while keeping the application. Reinstall them later from **Models**.
+- **Clear cache** removes temporary Still2Solid cache without touching model installations or exported files.
+- **Prepare for uninstall** removes installed model runtimes, Still2Solid app data, cache and local `still2solid.*` preferences/timing data. Exported GLB/OBJ/STL/3MF files saved elsewhere are never deleted.
+
+macOS does not call an application when it is dragged to Trash, so Still2Solid cannot run this cleanup automatically after deletion. For a complete uninstall, run **Prepare for uninstall** first, wait for **Cleanup complete**, quit Still2Solid, then move the application from **Applications** to **Trash**. On macOS the panel can open the Applications folder for the final step.
+
+Replacing or updating the `.app` does **not** remove downloaded models. This is intentional so normal updates do not force large model downloads again.
+
 ## Limits worth remembering
 
-Still2Solid cannot recover information a single image never contained. It also does not yet promise a signed installer, a completely bundled Python runtime, or safe automatic TripoSR recommendation on 8 GB Apple Silicon. Those are explicit open release/validation items rather than hidden caveats.
+Still2Solid cannot recover information a single image never contained. Packaged builds include the pinned Python runtime, while the current macOS download remains unsigned and may require one-time Gatekeeper approval. Safe automatic TripoSR recommendation on 8 GB Apple Silicon remains dependent on real-device measurement.

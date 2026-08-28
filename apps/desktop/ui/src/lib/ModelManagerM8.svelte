@@ -132,7 +132,7 @@
     <section class="model-manager" role="dialog" aria-modal="true" aria-labelledby="model-manager-title">
       <header>
         <div>
-          <span class="eyebrow">M8 · LOCAL MODEL RUNTIMES</span>
+          <span class="eyebrow">LOCAL MODEL RUNTIMES</span>
           <h2 id="model-manager-title">Model Manager</h2>
         </div>
         <button class="secondary close" type="button" disabled={!!busyModelId} on:click={() => (open = false)}>Close</button>
@@ -260,7 +260,7 @@
       </div>
 
       <footer class="manager-footer">
-        <strong>M8 includes two audited production adapters: TripoSR and gated Stable Fast 3D.</strong>
+        <strong>Still2Solid includes two audited production adapters: TripoSR and gated Stable Fast 3D.</strong>
         <span>Release builds use Still2Solid's pinned bundled Python 3.12 runtime. Model source/checkpoints are pinned and verified before activation; generation is local and one-shot with no localhost inference server.</span>
         <span>TripoSR remains the automatic permissive default where safe. Stable Fast 3D is always an explicit opt-in because its licence is conditional and its MPS path is experimental.</span>
       </footer>

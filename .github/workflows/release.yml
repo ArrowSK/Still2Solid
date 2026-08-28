@@ -72,7 +72,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: Still2Solid v__VERSION__
           releaseBody: |
-            Still2Solid desktop release. Model weights are installed separately in-app and are not embedded in the application package.
+            Still2Solid desktop release. Model weights are installed separately in-app and are not embedded in the application package. Settings → Storage provides model removal, cache cleanup and complete-uninstall preparation while normal upgrades keep downloaded models.
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}
