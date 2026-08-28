@@ -401,8 +401,24 @@ fn parse_python_probe(output: &str) -> Option<(u32, u32, String)> {
     Some((major, minor, version))
 }
 
-fn find_python() -> Result<(String, String), String> {
+fn find_python(app: &AppHandle) -> Result<(String, String), String> {
     let mut candidates = Vec::<String>::new();
+
+    // Packaged M7 builds carry a checksum-verified Python 3.12 runtime as a
+    // Tauri resource. Prefer it before developer/system interpreters.
+    if let Ok(resources) = app.path().resource_dir() {
+        #[cfg(target_os = "windows")]
+        let relative = PathBuf::from("python.exe");
+        #[cfg(not(target_os = "windows"))]
+        let relative = PathBuf::from("bin").join("python3");
+
+        for base in [resources.join("python"), resources.join("resources").join("python")] {
+            let candidate = base.join(&relative);
+            if candidate.exists() {
+                candidates.push(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
     if let Ok(explicit) = std::env::var("STILL2SOLID_PYTHON") {
         if !explicit.trim().is_empty() {
             candidates.push(explicit);
@@ -433,7 +449,7 @@ fn find_python() -> Result<(String, String), String> {
         }
     }
 
-    Err("M3 currently requires a local Python 3.11 or 3.12 interpreter to create the isolated TripoSR runtime. A bundled end-user Python runtime is a later packaging milestone.".to_string())
+    Err("Still2Solid could not find its bundled Python 3.12 runtime. Development builds may provide Python 3.11/3.12 with STILL2SOLID_PYTHON; packaged builds should be repaired or reinstalled instead of asking the user to configure Python manually.".to_string())
 }
 
 fn command_error(prefix: &str, output: std::process::Output) -> String {
@@ -463,7 +479,7 @@ fn install_triposr_blocking(app: AppHandle, state: Arc<RuntimeState>) -> Result<
 
     let install_result = (|| -> Result<(), String> {
         emit_install(&app, "runtime", 0.0, 0.01, "Checking the isolated Python runtime prerequisite", None, None);
-        let (system_python, python_version) = find_python()?;
+        let (system_python, python_version) = find_python(&app)?;
         emit_install(&app, "runtime", 0.08, 0.03, format!("Using Python {python_version} to create an isolated runtime"), None, None);
 
         let mut venv = Command::new(&system_python);
