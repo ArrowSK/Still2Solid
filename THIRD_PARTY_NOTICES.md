@@ -1,6 +1,6 @@
 # Third-party notices
 
-This is the development inventory for Still2Solid M3. Signed releases must generate a complete SBOM and dependency-licence report from the final locked artifacts.
+This is the development inventory for Still2Solid M5. Signed releases must generate a complete SBOM and dependency-licence report from the final locked artifacts.
 
 ## Application dependencies
 
@@ -8,14 +8,15 @@ This is the development inventory for Still2Solid M3. Signed releases must gener
 | --- | --- | --- |
 | Tauri | Desktop application framework | MIT / Apache-2.0 |
 | Svelte | UI framework | MIT |
-| Three.js | 3D preview/export | MIT |
+| Three.js | 3D preview, GLB parsing, OBJ/STL export | MIT |
+| fflate | Local ZIP packaging for OBJ + MTL + textures | MIT |
 | Vite | Frontend build tooling | MIT |
 | TypeScript | Frontend language tooling | Apache-2.0 |
 | sysinfo | Native hardware information | MIT |
 | reqwest | Verified model/source downloads | MIT / Apache-2.0 |
 | sha1 / sha2 / md5 / base64 | Integrity and transport helpers | permissive open-source licences; release SBOM required |
 
-## M3 TripoSR runtime
+## TripoSR production runtime
 
 | Component | Purpose | Licence / status |
 | --- | --- | --- |
@@ -34,6 +35,8 @@ This is the development inventory for Still2Solid M3. Signed releases must gener
 | ModernGL 5.10.0 | Texture-atlas rasterization | MIT |
 | scikit-image 0.26.0 | CPU marching-cubes implementation | BSD-3-Clause |
 
-Still2Solid does not place third-party AI weights in this Git repository. The M3 installer downloads only the hard-coded TripoSR/U2Net assets described in `docs/M3.md`, verifies them, and activates them only after verification succeeds.
+Still2Solid does not place third-party AI weights in this Git repository. The installer downloads only the hard-coded TripoSR/U2Net assets described in `docs/M3.md`, verifies them, and activates them only after verification succeeds.
+
+M5 adds no new AI model or model-weight licence. OBJ/STL conversion uses Three.js exporters already covered by the Three.js MIT licence, and ZIP packaging uses fflate under MIT.
 
 This inventory is informational and does not alter any third-party licence terms.

@@ -1,70 +1,68 @@
 # Architecture
 
-Still2Solid is a local-first desktop application. The stable user workflow is intentionally separated from model-specific inference code.
+Still2Solid is a local-first desktop application. The stable user workflow is intentionally separated from model-specific inference code and from downstream export/printing concerns.
 
 ## Layers
 
-1. **Desktop UI** — Svelte/TypeScript in the Tauri webview. Owns image selection, simple/advanced controls, progress presentation, learned local ETA profiles, Model Manager and Three.js preview.
+1. **Desktop UI** — Svelte/TypeScript in the Tauri webview. Owns image selection, simple/advanced controls, progress presentation, Model Manager, Three.js preview and M5 export UI.
 2. **Tauri core** — Rust process that owns trusted native capabilities: hardware probing, runtime installation, checksum verification, worker lifecycle, cancellation and app-local filesystem access.
 3. **Model catalogue and policy** — declarative model metadata plus deterministic hardware/licence assessment. Models can be assessed without installing or executing them.
-4. **Model adapters** — replaceable implementations conforming to the common generation/progress contract. M3 ships Mock3D plus the production TripoSR adapter.
+4. **Model adapters** — replaceable implementations conforming to the common generation/progress contract. Current executable adapters are Mock3D and production TripoSR.
 5. **Model workers** — production inference runs in isolated one-shot local processes, never an open localhost service.
-6. **Timing intelligence** — M4 observes successful worker progress in the UI, persists bounded per-configuration timing profiles locally, and converts those profiles into estimated stage weighting, percentage and ETA with an explicit confidence level.
-7. **Asset pipeline** — M3 can preview/export the direct TripoSR GLB; broader normalization, repair and export belongs to M5.
+6. **Canonical asset layer** — successful production output is treated as a validated GLB 2.0 master. Preview and exports derive from this master without mutating it.
+7. **Derived export layer** — M5 creates compatibility/output formats from the canonical GLB in memory. Print repair, sizing and 3MF remain separate M6 work.
 
-## M3 production boundary
+## Production runtime boundary
 
-M3 implements one audited production path only: TripoSR.
+The audited production path remains TripoSR. The installer pins source and model revisions, verifies downloaded source/model assets before activation, and runs inference fully locally from the installed runtime. M4 timing profiles remain a UI-side, local-only learning layer and do not alter inference parameters.
 
-The installer:
+## M5 canonical asset boundary
 
-- creates an isolated Python environment;
-- downloads the exact TripoSR source revision `107cefdc244c39106fa830359024f6a2f1c78871` file-by-file;
-- verifies each source file against its pinned Git blob SHA-1;
-- downloads model revision `5b521936b01fbe1890f6f9baed0254ab6351c04a`;
-- verifies `model.ckpt` with SHA-256 `429e2c6b22a0923967459de24d67f05962b235f79cde6b032aa7ed2ffcd970ee`;
-- downloads U2Net for optional foreground isolation and verifies the checksum published by rembg;
-- writes an installation manifest only after all verification succeeds;
-- atomically promotes the staging installation to the active model directory.
+M5 introduces one explicit invariant:
 
-The worker:
+> The model worker's validated GLB 2.0 output is the fidelity-preserving master asset for the generation.
 
-- receives only a local normalized source image and explicit generation settings;
-- blocks Hugging Face runtime downloads and runs with offline environment flags;
-- loads only the pinned local checkpoint/configuration;
-- uses a CPU scikit-image marching-cubes shim instead of requiring the upstream `torchmcubes` CUDA extension;
-- selects CUDA, Metal/MPS or CPU at runtime according to the requested backend and actual PyTorch availability;
-- uses conservative Fast/Standard/Best extraction settings;
-- attempts UV texture baking and falls back to a valid vertex-colour GLB if texture baking is unavailable;
-- exits after every generation, thereby unloading the model automatically.
+Before presenting export options, the UI validates the GLB header and parses the asset locally. The inspector records only in-memory technical facts such as byte size, mesh count, vertex/triangle count, material count, texture count and geometric bounds.
 
-The Tauri core owns the child process and can terminate it on cancellation. Progress is emitted from the worker to the UI through Tauri events, not through a network port.
+The master is not rewritten simply because another format is requested.
 
-## M4 timing boundary
+### GLB export
 
-M4 deliberately does not alter the worker protocol, model files, compatibility rules or inference settings. It is a UI-side observation layer over the already validated M3 progress stream.
+The GLB export downloads the exact validated bytes produced by the worker. It is therefore the preferred format for preserving embedded textures/materials and the closest representation of the generated result.
 
-A timing profile is keyed by the current hardware fingerprint, model ID/version, quality preset, requested backend and foreground-isolation setting. Successful TripoSR runs contribute total and per-stage durations. Failed and cancelled jobs contribute nothing. Once a baseline exists, extreme successful-duration outliers are kept only as excluded diagnostics.
+### OBJ compatibility package
 
-Profiles are stored in schema-versioned webview local storage. They contain durations and configuration fingerprints only; source filenames, images and generated assets are not stored. The store is bounded to avoid unbounded growth.
+OBJ/MTL cannot represent the full glTF/PBR material model. M5 therefore labels it as a compatibility export rather than an equivalent master.
 
-When a comparable profile exists, Still2Solid uses median stage durations to weight overall percentage and calculate remaining time. Interpolation between real worker events is explicitly marked as estimated and is capped before stage completion so the next real worker event remains authoritative.
+Conversion is performed locally in the UI using Three.js:
+
+- geometry, normals and UVs are exported to OBJ;
+- stable material names are generated;
+- MTL approximates base colour and opacity;
+- browser-readable base-colour and normal maps are converted to PNG and referenced from MTL;
+- OBJ, MTL, textures and `asset.json` are packed into a single ZIP using fflate;
+- the canonical GLB is unchanged.
+
+If a texture cannot be read back by the browser, the package remains structurally valid but cannot claim that texture was preserved. The manifest states that OBJ/MTL is a lossy compatibility conversion.
+
+### STL export
+
+M5 can derive binary STL geometry from the canonical GLB. The UI explicitly warns that STL carries no texture/colour and no reliable unit metadata.
+
+M5 does not claim STL is print-ready. Mesh repair, manifold/watertight checks, explicit sizing/orientation and 3MF are M6.
 
 ## Preserved behaviour
 
-If TripoSR is not installed, not verified or not selected, the M1/M2 Mock3D workflow remains available. Existing image selection, quality controls, cancellation, model selection and preview behaviour are not replaced by the timing layer.
-
-Changing hardware, model version, quality, backend or foreground-isolation setting selects a separate timing profile rather than contaminating an existing one.
+If TripoSR is not installed, not verified or not selected, the Mock3D workflow remains available. M5 does not replace the production runtime, learned ETA system, Model Manager, quality presets or preview controls.
 
 ## Security and privacy invariants
 
 - Source images stay local.
-- Timing histories stay local.
 - No telemetry or analytics.
 - No cloud inference.
 - No localhost HTTP inference service.
 - No `trust_remote_code=True`.
-- Production source and weights are pinned before execution.
-- Downloaded TripoSR source files and model weights are checksum verified before activation.
-- Conditional/gated models are never silently accepted or installed.
-- The only M3/M4 installable model ID is `triposr`; arbitrary model URLs or executable paths are not accepted by the Tauri commands.
+- Production source and weights remain pinned and checksum verified before execution.
+- Export conversion happens in memory inside the local desktop application.
+- Export does not upload generated geometry or textures.
+- The canonical master is not modified by OBJ/STL conversion.

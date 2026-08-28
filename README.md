@@ -6,13 +6,17 @@ Still2Solid is being built as a hardware-aware, model-agnostic workflow: drop an
 
 ## Status
 
-Milestone M4 adds local learned timing profiles on top of the M3 TripoSR production runtime. Successful generations are timed by stage and grouped by exact hardware profile, model/version, quality, backend choice and foreground-isolation setting. Those local profiles replace generic fixed ETA guesses as comparable runs accumulate.
+Milestone M5 adds a canonical production asset/export layer on top of the M3 TripoSR runtime and M4 learned ETA system.
 
-Failed and cancelled jobs are never used for ETA learning. Extreme successful timing outliers are retained only as excluded diagnostics and do not affect the learned median. Timing history is stored in the application's local browser storage only; Still2Solid sends no timing telemetry.
+A successful production generation is treated as a validated GLB 2.0 master. Still2Solid can now inspect that master and export it non-destructively as:
 
-Production inference still runs in a one-shot isolated local Python process. Still2Solid does not expose a localhost inference server or allow the worker to fetch Hugging Face code or weights during generation.
+- the exact GLB master;
+- an OBJ compatibility package containing OBJ, MTL, available PNG textures and an asset manifest;
+- binary STL geometry for downstream mesh/printing tools.
 
-M4 remains a development milestone. The in-app runtime installer currently uses an existing Python 3.11 or 3.12 interpreter only to create an isolated environment. Bundled interpreter/runtime packaging is deferred to the release-packaging milestone.
+OBJ/MTL is explicitly treated as a compatibility export rather than a fidelity-preserving format because it cannot represent the full GLB/PBR material model. STL is explicitly geometry-only and does not provide reliable unit metadata. Print repair, sizing and 3MF belong to M6.
+
+Production inference still runs in a one-shot isolated local Python process. Still2Solid does not expose a localhost inference server, enable telemetry, or allow the worker to fetch Hugging Face code or weights during generation. Learned timing data remains local-only.
 
 ## Licence
 
