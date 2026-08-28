@@ -1,6 +1,6 @@
 # Model licence policy
 
-Still2Solid application code is Apache-2.0. Model weights and model-specific code are separately licensed assets and must never be assumed to inherit the application licence.
+Still2Solid application code is Apache-2.0. Model weights, model-specific source and runtime components keep their own licences and must never be assumed to inherit the application licence.
 
 ## Registry states
 
@@ -11,41 +11,56 @@ Every production model is classified as one of:
 - `restricted`
 - `unknown`
 
-A production adapter may be enabled only after source-code licence, pretrained-weight licence, commercial-use conditions and required notices have been reviewed and recorded.
+A production adapter may be enabled only after source-code licence, pretrained-weight licence, regional/commercial conditions, immutable revision strategy and required notices have been reviewed and recorded.
 
-## M3 executable model
+## Executable production models
 
 ### TripoSR — `verified-permissive`
 
-M3 is intentionally limited to one executable production model.
-
 - Upstream source: `VAST-AI-Research/TripoSR`, pinned to commit `107cefdc244c39106fa830359024f6a2f1c78871`.
 - Model repository: `stabilityai/TripoSR`, pinned to revision `5b521936b01fbe1890f6f9baed0254ab6351c04a`.
-- Upstream states that the source code and pretrained model are MIT licensed.
+- Upstream states that source code and pretrained model are MIT licensed.
 - Downloaded source files are verified against pinned Git blob hashes.
 - `model.ckpt` is verified with SHA-256 `429e2c6b22a0923967459de24d67f05962b235f79cde6b032aa7ed2ffcd970ee` before activation.
-- The upstream MIT licence is downloaded and stored with the installed source.
+- The upstream MIT licence is stored with the installed source.
 
-M3 never uses `trust_remote_code=True` and blocks unexpected Hugging Face downloads during inference.
+TripoSR remains the permissive automatic production candidate where the hardware policy considers it safe.
 
-### Foreground isolation
+### Stable Fast 3D — `conditional`
 
-The optional foreground stage uses rembg under MIT and its U2Net model asset. The original U-2-Net project is Apache-2.0 licensed. The downloaded ONNX file is checked against the checksum published by rembg before the TripoSR installation is activated.
+M8 adds Stable Fast 3D as an executable **explicit opt-in** model.
 
-## Catalogue-only models
+- Upstream source: `Stability-AI/stable-fast-3d`, pinned to GitHub commit `ff21fc491b4dc5314bf6734c7c0dabd86b5f5bb2`.
+- Gated model repository: `stabilityai/stable-fast-3d`, pinned to Hugging Face revision `f0c9a8ffd62cb1bbc8a7a53c9f87a0be1b6be778`.
+- `model.safetensors` is verified with SHA-256 `a3416e1cf654e7d4f5e75f116cec2c3f0a14501a77d30c2f6068bbda178de388` before activation.
+- The model uses the Stability AI Community License. The current upstream model card states that commercial use by individuals/organizations with annual revenue above US$1M requires an enterprise commercial licence; users remain responsible for the terms applicable to their use.
+- Installation requires the user to have accepted the upstream gate and to explicitly acknowledge the model licence in Still2Solid.
+- The user supplies a Hugging Face read token for installation. Still2Solid passes it to the installer process only and does not store it in application settings or the install manifest.
+- Hardware compatibility does not imply licence eligibility.
+- SF3D is never silently auto-selected; choosing it is an explicit user action.
 
-- **Stable Fast 3D** — `conditional`; gated access under the Stability AI Community License. Hardware compatibility does not imply licence eligibility. M3 does not install or execute it.
-- **TRELLIS.2 4B** — `verified-permissive` for the model/main code under MIT, but M3 does not install or execute it and its full runtime dependency set still requires release review.
+The source and model revisions are immutable identifiers. Changing either revision requires a fresh licence/security review and updated integrity evidence.
 
-## Runtime dependencies
+## Foreground isolation
 
-The isolated TripoSR environment uses exact package versions. Their licences remain their own; important runtime components are listed in `THIRD_PARTY_NOTICES.md`. Exact package-version pinning does not replace a release SBOM or wheel-hash lock, which remains required before distributable release packaging.
+Optional foreground isolation uses rembg under MIT and its U2Net model asset. The original U-2-Net project is Apache-2.0 licensed. The downloaded ONNX file is checksum-verified before a production installation is activated.
 
-## Safeguards for later milestones
+## Catalogue-only model
 
-- Keep model weights out of Git.
+**TRELLIS.2 4B** remains catalogue-only. Its model/main code is MIT, but its current upstream Linux + NVIDIA ≥24 GB VRAM requirements do not fit the primary target and its full runtime dependency set must still be reviewed before any future executable adapter.
+
+Models whose licence excludes the intended distribution region are not included as official executable options.
+
+## Runtime and release safeguards
+
+- Keep AI weights out of Git.
+- Use immutable source/model revisions rather than moving branches.
+- Verify downloaded production assets before activation.
+- Never enable arbitrary remote model code such as `trust_remote_code=True` as a convenience shortcut.
+- Keep inference offline after installation and avoid persistent localhost model servers.
 - Re-check upstream licence metadata whenever a pinned revision changes.
-- Generate a complete SBOM and dependency-licence report for release builds.
-- Lock distributable Python wheels/artifacts by platform and SHA-256 before signed releases.
-- Conditional/community licences require explicit disclosure and acceptance before installation.
+- Conditional/community licences require explicit disclosure and user acceptance before installation.
 - Never accept gated-model terms on the user's behalf.
+- Generate/review a complete SBOM and dependency-licence report from final release artifacts before publishing a signed release.
+
+Version pinning alone does not change third-party licence terms.

@@ -1,0 +1,19 @@
+{
+  "version": "3.12.13",
+  "release": "20260807",
+  "provider": "astral-sh/python-build-standalone",
+  "archives": {
+    "aarch64-apple-darwin": {
+      "filename": "cpython-3.12.13+20260807-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "25baa97c65b3f0aa90e21131b4f9e80aef8899e8144006db8a9d2c1ab9e807e3"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "filename": "cpython-3.12.13+20260807-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "506191be3ee7bd190a8834dcdc1b3bc70aab50608deccc711935aa007239cabd"
+    },
+    "x86_64-pc-windows-msvc": {
+      "filename": "cpython-3.12.13+20260807-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+      "sha256": "18bcc65b17921806b72cdc88bcf000bf67a2c99a8fc381fe1629f2b9ba56858d"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 300" role="img" aria-labelledby="title desc">
+  <title id="title">Still2Solid</title>
+  <desc id="desc">Still2Solid wordmark with the image-to-3D app symbol.</desc>
+  <defs>
+    <linearGradient id="bg" x1="18" y1="16" x2="250" y2="252" gradientUnits="userSpaceOnUse"><stop stop-color="#172946"/><stop offset=".55" stop-color="#0d1729"/><stop offset="1" stop-color="#080e18"/></linearGradient>
+    <linearGradient id="cyan" x1="96" y1="176" x2="208" y2="92" gradientUnits="userSpaceOnUse"><stop stop-color="#2f7dff"/><stop offset=".52" stop-color="#19c7ff"/><stop offset="1" stop-color="#5af3e8"/></linearGradient>
+    <linearGradient id="two" x1="558" y1="70" x2="660" y2="229" gradientUnits="userSpaceOnUse"><stop stop-color="#55f2e4"/><stop offset=".48" stop-color="#1dc7ff"/><stop offset="1" stop-color="#397cff"/></linearGradient>
+    <clipPath id="v"><path d="M175 67c-10 0-18 5-18 11 0 5 4 9 11 11-1 13-7 21-15 30-10 11-16 25-16 46 0 40 22 60 48 60s48-20 48-60c0-21-6-35-16-46-8-9-14-17-15-30 7-2 11-6 11-11 0-6-8-11-18-11h-20Z"/></clipPath>
+  </defs>
+  <rect width="1120" height="300" rx="34" fill="#0b1019"/>
+  <g transform="translate(28 24)">
+    <rect width="252" height="252" rx="58" fill="url(#bg)"/><rect x=".75" y=".75" width="250.5" height="250.5" rx="57.25" fill="none" stroke="#42bfff" stroke-opacity=".34" stroke-width="1.5"/>
+    <g transform="rotate(-7 74 116)"><rect x="24" y="52" width="92" height="124" rx="11" fill="#f5f6f8"/><rect x="31" y="59" width="78" height="110" rx="7" fill="#e4ded4"/><path d="M70 76c-8 0-14 4-14 8 0 4 4 7 9 8-1 9-5 14-11 20-7 8-11 18-11 31 0 22 12 34 27 34s27-12 27-34c0-13-4-23-11-31-6-6-10-11-11-20 5-1 9-4 9-8 0-4-6-8-14-8Z" fill="#ad9475"/></g>
+    <path d="M93 177c14-27 33-41 58-44" fill="none" stroke="url(#cyan)" stroke-width="10" stroke-linecap="round"/><path d="m146 120 23 10-19 17 1-14-13-2 8-11Z" fill="url(#cyan)"/>
+    <path d="M175 67c-10 0-18 5-18 11 0 5 4 9 11 11-1 13-7 21-15 30-10 11-16 25-16 46 0 40 22 60 48 60s48-20 48-60c0-21-6-35-16-46-8-9-14-17-15-30 7-2 11-6 11-11 0-6-8-11-18-11h-20Z" fill="#d5d1c8"/>
+    <g clip-path="url(#v)" fill="none" stroke="#1dcaff" stroke-width="1.2"><path d="M164 62v170M178 62v170M192 62v170M206 62v170M220 62v170"/><path d="M134 91h105M134 111h105M134 134h105M134 158h105M134 183h105M134 207h105"/></g>
+    <path d="M175 67c-10 0-18 5-18 11 0 5 4 9 11 11-1 13-7 21-15 30-10 11-16 25-16 46 0 40 22 60 48 60s48-20 48-60c0-21-6-35-16-46-8-9-14-17-15-30 7-2 11-6 11-11 0-6-8-11-18-11h-20Z" fill="none" stroke="#55e8ff" stroke-width="1.7"/>
+  </g>
+  <g font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif" font-weight="760" letter-spacing="-6">
+    <text x="328" y="190" font-size="128" fill="#f3f6fb">Still</text>
+    <text x="566" y="190" font-size="128" fill="url(#two)">2</text>
+    <text x="642" y="190" font-size="128" fill="#f3f6fb">Solid</text>
+  </g>
+  <text x="334" y="229" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif" font-size="24" font-weight="560" letter-spacing="3" fill="#8795a9">ONE IMAGE → LOCAL 3D</text>
+</svg>

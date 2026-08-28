@@ -50,7 +50,7 @@ export interface ModelCandidate {
   availability: ModelAvailability;
   hardwareNotes: string[];
   licenseNote: string;
-  runtimeAdapter: 'triposr' | null;
+  runtimeAdapter: 'triposr' | 'sf3d' | null;
 }
 
 export interface ModelAssessment {

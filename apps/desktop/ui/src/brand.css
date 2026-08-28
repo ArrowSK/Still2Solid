@@ -16,7 +16,7 @@
   transform: translateY(-50%);
   border: 1px solid rgba(136, 167, 255, .28);
   border-radius: 12px;
-  background: #101725 url('/brand/still2solid-icon.webp') center / cover no-repeat;
+  background: #101725 url('/brand/still2solid-icon.svg') center / cover no-repeat;
   box-shadow: 0 8px 24px rgba(20, 77, 184, .2), 0 0 18px rgba(51, 190, 255, .08);
   content: '';
 }
@@ -24,7 +24,7 @@
 .drop-icon {
   overflow: hidden;
   border-color: rgba(136, 167, 255, .34);
-  background: #101725 url('/brand/still2solid-icon.webp') center / cover no-repeat;
+  background: #101725 url('/brand/still2solid-icon.svg') center / cover no-repeat;
   box-shadow: 0 14px 36px rgba(20, 77, 184, .2), 0 0 24px rgba(51, 190, 255, .1);
   color: transparent;
   font-size: 0;

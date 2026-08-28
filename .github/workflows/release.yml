@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14
+            target: aarch64-apple-darwin
+            label: macOS Apple Silicon
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: Linux x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: Windows x64
+    runs-on: ${{ matrix.platform }}
+    name: ${{ matrix.label }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Linux bundle prerequisites
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install locked frontend dependencies
+        run: npm ci
+
+      - name: Prepare checksum-verified bundled Python
+        run: python scripts/prepare_python_runtime.py --target ${{ matrix.target }}
+
+      - name: Validate bundled interpreter
+        shell: bash
+        if: matrix.platform != 'windows-latest'
+        run: src-tauri/resources/python/bin/python3 -c "import sys; assert sys.version_info[:2] == (3, 12); print(sys.version)"
+
+      - name: Validate bundled interpreter (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: '& src-tauri/resources/python/python.exe -c "import sys; assert sys.version_info[:2] == (3, 12); print(sys.version)"'
+
+      - name: Build and publish release artifacts
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Still2Solid v__VERSION__
+          releaseBody: |
+            Still2Solid desktop release. Model weights are installed separately in-app and are not embedded in the application package.
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}
