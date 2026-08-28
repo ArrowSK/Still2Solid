@@ -6,11 +6,13 @@ Still2Solid is being built as a hardware-aware, model-agnostic workflow: drop an
 
 ## Status
 
-Milestone M3 adds the first real production adapter: TripoSR. The Model Manager can install a pinned, checksum-verified TripoSR runtime, and Generate switches from Mock3D to TripoSR only when that runtime is installed, verified and selected.
+Milestone M4 adds local learned timing profiles on top of the M3 TripoSR production runtime. Successful generations are timed by stage and grouped by exact hardware profile, model/version, quality, backend choice and foreground-isolation setting. Those local profiles replace generic fixed ETA guesses as comparable runs accumulate.
 
-Production inference runs in a one-shot isolated local Python process. Still2Solid does not expose a localhost inference server, enable telemetry, or allow the worker to fetch Hugging Face code or weights during generation.
+Failed and cancelled jobs are never used for ETA learning. Extreme successful timing outliers are retained only as excluded diagnostics and do not affect the learned median. Timing history is stored in the application's local browser storage only; Still2Solid sends no timing telemetry.
 
-M3 is still a development milestone. Its in-app runtime installer currently uses an existing Python 3.11 or 3.12 interpreter only to create an isolated environment. Bundled interpreter/runtime packaging is deferred to the release-packaging milestone.
+Production inference still runs in a one-shot isolated local Python process. Still2Solid does not expose a localhost inference server or allow the worker to fetch Hugging Face code or weights during generation.
+
+M4 remains a development milestone. The in-app runtime installer currently uses an existing Python 3.11 or 3.12 interpreter only to create an isolated environment. Bundled interpreter/runtime packaging is deferred to the release-packaging milestone.
 
 ## Licence
 
