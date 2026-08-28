@@ -224,7 +224,7 @@
         <div><span class="eyebrow">GENERATED LOCALLY</span><h2>Preview</h2></div>
         <div class="result-stats"><span>{result.elapsedSeconds.toFixed(1)} s</span><span>Textured</span><span>{result.triangles.toLocaleString()} triangles</span></div>
       </div>
-      <ModelViewer {sourceUrl} textureUrl={sourceUrl} {wireframe} {showGrid} />
+      <ModelViewer textureUrl={sourceUrl} {wireframe} {showGrid} />
       <div class="viewer-options">
         <label class="check"><input type="checkbox" bind:checked={wireframe} /> Wireframe</label>
         <label class="check"><input type="checkbox" bind:checked={showGrid} /> Grid</label>
