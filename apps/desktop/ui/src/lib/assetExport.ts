@@ -55,6 +55,12 @@ export function formatAssetBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
 
+function ownedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 async function fetchCanonicalBytes(modelUrl: string): Promise<Uint8Array> {
   const response = await fetch(modelUrl);
   if (!response.ok) throw new Error(`Could not read the generated GLB (${response.status}).`);
@@ -66,7 +72,7 @@ async function fetchCanonicalBytes(modelUrl: string): Promise<Uint8Array> {
 async function loadCanonicalScene(modelUrl: string): Promise<{ scene: THREE.Group; bytes: Uint8Array }> {
   const bytes = await fetchCanonicalBytes(modelUrl);
   const loader = new GLTFLoader();
-  const gltf = await loader.parseAsync(bytes.slice().buffer as ArrayBuffer, '');
+  const gltf = await loader.parseAsync(ownedArrayBuffer(bytes), '');
   gltf.scene.updateMatrixWorld(true);
   return { scene: gltf.scene, bytes };
 }
@@ -143,7 +149,7 @@ function triggerDownload(blob: Blob, filename: string) {
 
 export async function exportCanonicalGlb(modelUrl: string, filename: string): Promise<void> {
   const bytes = await fetchCanonicalBytes(modelUrl);
-  triggerDownload(new Blob([bytes], { type: 'model/gltf-binary' }), `${safeAssetBaseName(filename)}.glb`);
+  triggerDownload(new Blob([ownedArrayBuffer(bytes)], { type: 'model/gltf-binary' }), `${safeAssetBaseName(filename)}.glb`);
 }
 
 function cloneSceneForObj(scene: THREE.Object3D): { root: THREE.Object3D; materials: MaterialExportRecord[] } {
@@ -279,20 +285,13 @@ export async function exportObjPackage(modelUrl: string, filename: string): Prom
     ...materialBundle.files,
   }, { level: 6 });
 
-  triggerDownload(new Blob([zip], { type: 'application/zip' }), `${base}-obj.zip`);
+  triggerDownload(new Blob([ownedArrayBuffer(zip)], { type: 'application/zip' }), `${base}-obj.zip`);
 }
 
 export async function exportBinaryStl(modelUrl: string, filename: string): Promise<void> {
   const base = safeAssetBaseName(filename);
   const { scene } = await loadCanonicalScene(modelUrl);
-  const output = new STLExporter().parse(scene, { binary: true });
-  let bytes: Uint8Array;
-  if (output instanceof DataView) {
-    bytes = new Uint8Array(output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength));
-  } else if (output instanceof ArrayBuffer) {
-    bytes = new Uint8Array(output);
-  } else {
-    bytes = strToU8(String(output));
-  }
-  triggerDownload(new Blob([bytes], { type: 'model/stl' }), `${base}.stl`);
+  const output = new STLExporter().parse(scene, { binary: true }) as DataView;
+  const source = new Uint8Array(output.buffer, output.byteOffset, output.byteLength);
+  triggerDownload(new Blob([ownedArrayBuffer(source)], { type: 'model/stl' }), `${base}.stl`);
 }
