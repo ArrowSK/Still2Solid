@@ -14,7 +14,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -25,7 +24,7 @@ SOURCE_BLOBS = {
     "sf3d/system.py": "1ed146cc46c19d24b3166fa7e2a27b6c79a0f9a2",
 }
 MODEL_REPO = "stabilityai/stable-fast-3d"
-MODEL_REVISION = "main"  # gated repository; payload is pinned below by SHA-256
+MODEL_REVISION = "f0c9a8ffd62cb1bbc8a7a53c9f87a0be1b6be778"
 MODEL_SHA256 = "a3416e1cf654e7d4f5e75f116cec2c3f0a14501a77d30c2f6068bbda178de388"
 DINO_REPO = "facebook/dinov2-large"
 DINO_REVISION = "0ff9d1340c9524c60f3f03e8573c57a1f8197f24"
