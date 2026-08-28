@@ -14,12 +14,23 @@
     type AssetExportFormat,
     type CanonicalAssetInspection,
   } from './assetExport';
+  import {
+    defaultPrintPrepOptions,
+    exportPrepared3mf,
+    exportPreparedStl,
+    preparePrintMesh,
+    type PreparedPrintMesh,
+    type PrintPrepOptions,
+    type QuarterTurn,
+  } from './printPrep';
 
   export let textureUrl = '';
   export let modelUrl = '';
   export let exportFilename = 'still2solid.glb';
   export let wireframe = false;
   export let showGrid = true;
+
+  const quarterTurns: QuarterTurn[] = [0, 90, 180, 270];
 
   let host: HTMLDivElement;
   let renderer: THREE.WebGLRenderer;
@@ -28,10 +39,12 @@
   let controls: OrbitControls;
   let mockModel: THREE.Mesh | null = null;
   let productionModel: THREE.Object3D | null = null;
+  let preparedPreview: THREE.Mesh | null = null;
   let frame = 0;
   let appliedTexture: THREE.Texture | null = null;
   let loadedModelUrl = '';
   let viewerError = '';
+
   let exportOpen = false;
   let exportBusy: AssetExportFormat | '' = '';
   let exportError = '';
@@ -39,9 +52,21 @@
   let inspectionUrl = '';
   let inspecting = false;
 
+  let printOpen = false;
+  let printBusy = false;
+  let printExportBusy: '3mf' | 'stl' | '' = '';
+  let printError = '';
+  let printOptions: PrintPrepOptions = defaultPrintPrepOptions();
+  let preparedPrint: PreparedPrintMesh | null = null;
+  let preparedOptionsKey = '';
+
+  $: currentPrintOptionsKey = JSON.stringify(printOptions);
+  $: printDirty = !!preparedPrint && currentPrintOptionsKey !== preparedOptionsKey;
+
   function disposeMaterial(material: THREE.Material) {
     const candidate = material as THREE.MeshStandardMaterial;
     candidate.map?.dispose();
+    candidate.normalMap?.dispose();
     material.dispose();
   }
 
@@ -52,6 +77,13 @@
       if (Array.isArray(object.material)) object.material.forEach(disposeMaterial);
       else if (object.material) disposeMaterial(object.material);
     });
+  }
+
+  function removePreparedPreview() {
+    if (!preparedPreview || !scene) return;
+    scene.remove(preparedPreview);
+    disposeObject(preparedPreview);
+    preparedPreview = null;
   }
 
   function setWireframe(root: THREE.Object3D | null) {
@@ -111,12 +143,56 @@
     if (grid) grid.position.y = box.min.y - maxSize * 0.015;
   }
 
+  function showCanonicalPreview() {
+    removePreparedPreview();
+    if (productionModel) {
+      productionModel.visible = true;
+      setWireframe(productionModel);
+      fitCamera(productionModel);
+    } else if (mockModel) {
+      mockModel.visible = true;
+      fitCamera(mockModel);
+    }
+  }
+
+  function showPreparedPrintPreview(prepared: PreparedPrintMesh) {
+    if (!scene) return;
+    removePreparedPreview();
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(prepared.mesh.vertices.length * 3);
+    prepared.mesh.vertices.forEach(([x, y, z], index) => {
+      // Print files are Z-up. Convert back to Three.js Y-up for the preview only.
+      positions[index * 3] = x;
+      positions[index * 3 + 1] = z;
+      positions[index * 3 + 2] = -y;
+    });
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setIndex(prepared.mesh.triangles.flat());
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xc8cfdd,
+      roughness: 0.72,
+      metalness: 0.03,
+      wireframe,
+    });
+    preparedPreview = new THREE.Mesh(geometry, material);
+    preparedPreview.name = 'prepared-print-preview';
+    productionModel && (productionModel.visible = false);
+    mockModel && (mockModel.visible = false);
+    scene.add(preparedPreview);
+    fitCamera(preparedPreview);
+  }
+
   function showMock() {
     loadedModelUrl = '';
     viewerError = '';
     inspection = null;
     inspectionUrl = '';
     exportOpen = false;
+    printOpen = false;
+    preparedPrint = null;
+    preparedOptionsKey = '';
+    removePreparedPreview();
     if (productionModel) {
       scene.remove(productionModel);
       disposeObject(productionModel);
@@ -150,6 +226,10 @@
     loadedModelUrl = url;
     viewerError = '';
     exportError = '';
+    printError = '';
+    preparedPrint = null;
+    preparedOptionsKey = '';
+    removePreparedPreview();
     void inspectProductionAsset(url);
     const loader = new GLTFLoader();
     loader.load(
@@ -190,7 +270,7 @@
 
   $: if (scene) {
     wireframe;
-    setWireframe(productionModel ?? mockModel);
+    setWireframe(preparedPreview ?? productionModel ?? mockModel);
   }
 
   async function exportMockGlb() {
@@ -226,6 +306,63 @@
     } finally {
       exportBusy = '';
     }
+  }
+
+  function toggleExport() {
+    exportOpen = !exportOpen;
+    if (exportOpen) {
+      printOpen = false;
+      showCanonicalPreview();
+    }
+  }
+
+  function togglePrint() {
+    printOpen = !printOpen;
+    if (printOpen) {
+      exportOpen = false;
+      if (preparedPrint && !printDirty) showPreparedPrintPreview(preparedPrint);
+    } else {
+      showCanonicalPreview();
+    }
+  }
+
+  async function runPrintPrep() {
+    if (!modelUrl || printBusy) return;
+    printBusy = true;
+    printError = '';
+    try {
+      preparedPrint = await preparePrintMesh(modelUrl, printOptions);
+      printOptions = preparedPrint.options;
+      preparedOptionsKey = JSON.stringify(preparedPrint.options);
+      showPreparedPrintPreview(preparedPrint);
+    } catch (caught) {
+      printError = caught instanceof Error ? caught.message : 'Print preparation failed.';
+      preparedPrint = null;
+      preparedOptionsKey = '';
+      showCanonicalPreview();
+    } finally {
+      printBusy = false;
+    }
+  }
+
+  function runPrintExport(format: '3mf' | 'stl') {
+    if (!preparedPrint || printDirty || printExportBusy) return;
+    printExportBusy = format;
+    printError = '';
+    try {
+      if (format === '3mf') exportPrepared3mf(preparedPrint, exportFilename);
+      else exportPreparedStl(preparedPrint, exportFilename);
+    } catch (caught) {
+      printError = caught instanceof Error ? caught.message : 'Print export failed.';
+    } finally {
+      printExportBusy = '';
+    }
+  }
+
+  function formatVolume(value: number | null): string {
+    if (value === null) return '—';
+    if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} cm³`;
+    return `${value.toFixed(value >= 100 ? 0 : 1)} mm³`;
   }
 
   onMount(() => {
@@ -288,6 +425,7 @@
       controls.dispose();
       renderer.dispose();
       appliedTexture?.dispose();
+      if (preparedPreview) disposeObject(preparedPreview);
       if (productionModel) disposeObject(productionModel);
       if (mockModel) disposeObject(mockModel);
       renderer.domElement.remove();
@@ -319,12 +457,15 @@
   {/if}
 
   <div class="viewer-toolbar">
-    <span>Drag to rotate · scroll to zoom</span>
-    {#if modelUrl}
-      <button type="button" class="secondary" on:click={() => (exportOpen = !exportOpen)}>{exportOpen ? 'Close export' : 'Export…'}</button>
-    {:else}
-      <button type="button" class="secondary" on:click={exportMockGlb}>Export mock GLB</button>
-    {/if}
+    <span>{preparedPreview ? 'Prepared print preview · drag to rotate · scroll to zoom' : 'Drag to rotate · scroll to zoom'}</span>
+    <div class="toolbar-actions">
+      {#if modelUrl}
+        <button type="button" class="secondary" class:active={printOpen} on:click={togglePrint}>{printOpen ? 'Close print prep' : 'Prepare for print…'}</button>
+        <button type="button" class="secondary" class:active={exportOpen} on:click={toggleExport}>{exportOpen ? 'Close export' : 'Export…'}</button>
+      {:else}
+        <button type="button" class="secondary" on:click={exportMockGlb}>Export mock GLB</button>
+      {/if}
+    </div>
   </div>
 
   {#if modelUrl && exportOpen}
@@ -351,9 +492,9 @@
         </article>
 
         <article>
-          <div><strong>STL</strong><span>Geometry only</span></div>
-          <p>Binary STL for downstream mesh tools. STL stores no colour, texture or reliable unit metadata; print sizing and repair belong to M6.</p>
-          <button type="button" class="secondary" disabled={!!exportBusy} on:click={() => runExport('stl')}>{exportBusy === 'stl' ? 'Converting…' : 'Export STL'}</button>
+          <div><strong>STL</strong><span>Raw geometry</span></div>
+          <p>Binary STL derived directly from the canonical GLB. It carries no colour, physical scale or reliable unit metadata. Use Print Prep when sizing matters.</p>
+          <button type="button" class="secondary" disabled={!!exportBusy} on:click={() => runExport('stl')}>{exportBusy === 'stl' ? 'Converting…' : 'Export raw STL'}</button>
         </article>
       </div>
 
@@ -370,6 +511,108 @@
       {#if exportError}<div class="export-error" role="status">{exportError}</div>{/if}
     </section>
   {/if}
+
+  {#if modelUrl && printOpen}
+    <section class="print-panel" aria-label="Prepare generated model for 3D printing">
+      <div class="print-intro">
+        <div>
+          <span class="export-eyebrow">M6 · PRINT PREPARATION</span>
+          <h3>Prepare a printable copy</h3>
+        </div>
+        <p>The source photo provides no physical scale. Choose the final longest dimension explicitly; the prepared copy is Z-up and placed on the build plate at Z=0. The canonical GLB is never modified.</p>
+      </div>
+
+      <div class="print-layout">
+        <div class="print-controls">
+          <label>
+            <span>Longest dimension</span>
+            <div class="input-with-unit"><input type="number" min="5" max="1000" step="1" bind:value={printOptions.targetMaxDimensionMm} disabled={printBusy} /><strong>mm</strong></div>
+            <small>5–1000 mm · isotropic scaling</small>
+          </label>
+
+          <div class="rotation-grid">
+            <label><span>Rotate X</span><select bind:value={printOptions.rotateX} disabled={printBusy}>{#each quarterTurns as turn}<option value={turn}>{turn}°</option>{/each}</select></label>
+            <label><span>Rotate Y</span><select bind:value={printOptions.rotateY} disabled={printBusy}>{#each quarterTurns as turn}<option value={turn}>{turn}°</option>{/each}</select></label>
+            <label><span>Rotate Z</span><select bind:value={printOptions.rotateZ} disabled={printBusy}>{#each quarterTurns as turn}<option value={turn}>{turn}°</option>{/each}</select></label>
+          </div>
+          <small class="control-note">Rotation is applied after converting the generated Y-up model to printer-friendly Z-up coordinates.</small>
+
+          <label>
+            <span>Flat base band</span>
+            <div class="input-with-unit"><input type="number" min="0" max="100" step="0.5" bind:value={printOptions.flatBaseDepthMm} disabled={printBusy} /><strong>mm</strong></div>
+            <small>0 = off. Flattens only the lowest band of the prepared copy; capped conservatively when possible.</small>
+          </label>
+
+          <label class="check-row"><input type="checkbox" bind:checked={printOptions.capSmallPlanarHoles} disabled={printBusy} /><span>Cap simple planar holes when safe</span></label>
+
+          <button type="button" class="primary prepare-button" disabled={printBusy} on:click={runPrintPrep}>{printBusy ? 'Analyzing and repairing…' : preparedPrint ? 'Prepare again' : 'Analyze & prepare'}</button>
+          {#if printDirty}<p class="dirty-note">Settings changed. Prepare again before exporting; the preview still shows the previous prepared copy.</p>{/if}
+        </div>
+
+        <div class="print-result">
+          {#if preparedPrint}
+            <div class="print-status" class:printable={preparedPrint.status === 'printable'} class:incomplete={preparedPrint.status !== 'printable'}>
+              <div><span>Status</span><strong>{preparedPrint.status === 'printable' ? 'Printable' : 'Automatic repair incomplete'}</strong></div>
+              <p>{preparedPrint.status === 'printable' ? 'Topology checks passed after conservative local repair.' : 'One or more topology checks still need attention in a dedicated mesh editor or slicer.'}</p>
+            </div>
+
+            <div class="dimension-strip">
+              <div><span>X</span><strong>{preparedPrint.boundsMm.x.toFixed(1)} mm</strong></div>
+              <div><span>Y</span><strong>{preparedPrint.boundsMm.y.toFixed(1)} mm</strong></div>
+              <div><span>Z</span><strong>{preparedPrint.boundsMm.z.toFixed(1)} mm</strong></div>
+              <div><span>Volume</span><strong>{formatVolume(preparedPrint.after.volumeMm3)}</strong></div>
+            </div>
+
+            <div class="topology-grid">
+              <div><span>Watertight</span><strong class:good={preparedPrint.after.watertight}>{preparedPrint.after.watertight ? 'Yes' : 'No'}</strong></div>
+              <div><span>Manifold</span><strong class:good={preparedPrint.after.manifold}>{preparedPrint.after.manifold ? 'Yes' : 'No'}</strong></div>
+              <div><span>Boundary edges</span><strong>{preparedPrint.after.boundaryEdges}</strong></div>
+              <div><span>Non-manifold edges</span><strong>{preparedPrint.after.nonManifoldEdges}</strong></div>
+              <div><span>Non-manifold vertices</span><strong>{preparedPrint.after.nonManifoldVertices}</strong></div>
+              <div><span>Winding conflicts</span><strong>{preparedPrint.after.orientationConflicts}</strong></div>
+              <div><span>Degenerate faces</span><strong>{preparedPrint.after.degenerateTriangles}</strong></div>
+              <div><span>Disconnected shells</span><strong>{preparedPrint.after.components}</strong></div>
+            </div>
+
+            <details class="repair-details">
+              <summary>Repair details</summary>
+              <div>
+                <p><strong>Before:</strong> {preparedPrint.before.boundaryEdges} boundary edges · {preparedPrint.before.nonManifoldEdges} non-manifold edges · {preparedPrint.before.degenerateTriangles} degenerate faces · {preparedPrint.before.orientationConflicts} winding conflicts.</p>
+                {#if preparedPrint.repairs.length}
+                  <ul>{#each preparedPrint.repairs as repair}<li>{repair}</li>{/each}</ul>
+                {:else}
+                  <p>No topology changes were required.</p>
+                {/if}
+                {#if preparedPrint.warnings.length}
+                  <ul class="warnings">{#each preparedPrint.warnings as warning}<li>{warning}</li>{/each}</ul>
+                {/if}
+              </div>
+            </details>
+
+            <div class="print-export-grid">
+              <article>
+                <div><strong>3MF</strong><span>Recommended for printing</span></div>
+                <p>Stores explicit millimetre units and the prepared geometry. This is the preferred hand-off to a modern slicer.</p>
+                <button type="button" class="primary" disabled={printDirty || !!printExportBusy} on:click={() => runPrintExport('3mf')}>{printExportBusy === '3mf' ? 'Exporting…' : 'Export 3MF'}</button>
+              </article>
+              <article>
+                <div><strong>Prepared STL</strong><span>Legacy geometry</span></div>
+                <p>Coordinates are scaled in millimetres, but STL itself has no unit metadata. Confirm “mm” when importing into a slicer.</p>
+                <button type="button" class="secondary" disabled={printDirty || !!printExportBusy} on:click={() => runPrintExport('stl')}>{printExportBusy === 'stl' ? 'Exporting…' : 'Export prepared STL'}</button>
+              </article>
+            </div>
+          {:else}
+            <div class="print-placeholder">
+              <strong>No prepared copy yet</strong>
+              <p>Choose the intended size and orientation, then run Analyze & prepare. Still2Solid will remove degenerate faces, repair consistent winding, orient closed shells outward and optionally cap only simple planar holes.</p>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      {#if printError}<div class="export-error" role="status">{printError}</div>{/if}
+    </section>
+  {/if}
 </div>
 
 <style>
@@ -381,31 +624,80 @@
   .asset-identity { display: flex; align-items: baseline; gap: 8px; }
   .asset-identity span, .asset-facts { color: var(--muted); font-size: 11px; }
   .asset-identity strong { color: var(--accent-strong); font-size: 12px; }
-  .asset-facts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 12px; }
+  .asset-facts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 12px; }
   .viewer-toolbar { display: flex; gap: 16px; align-items: center; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
-  .export-panel { padding: 18px; border-top: 1px solid var(--border); background: #11141a; }
-  .export-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
-  .export-intro h3 { margin: 3px 0 0; color: var(--text); font-size: 18px; }
-  .export-intro p { max-width: 470px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .toolbar-actions { display: flex; gap: 8px; }
+  .toolbar-actions button.active { border-color: #617bc6; color: var(--accent-strong); background: #222a3a; }
+
+  .export-panel, .print-panel { border-top: 1px solid var(--border); background: #101319; }
+  .export-panel { padding: 18px; }
+  .export-intro, .print-intro { display: grid; grid-template-columns: minmax(220px, .7fr) 1.3fr; gap: 20px; align-items: end; }
+  .export-intro h3, .print-intro h3 { margin: 4px 0 0; font-size: 18px; }
+  .export-intro p, .print-intro p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
   .export-eyebrow { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; }
-  .export-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
-  .export-grid article { display: flex; flex-direction: column; min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: #171a21; }
-  .export-grid article > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .export-grid article strong { font-size: 14px; }
-  .export-grid article span { color: var(--muted); font-size: 10px; }
-  .export-grid article p { flex: 1; margin: 9px 0 13px; color: var(--muted); font-size: 11px; line-height: 1.45; }
-  .export-grid article button { width: 100%; padding: 9px 10px; }
-  .inspection-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: 12px; }
-  .inspection-grid > div { display: grid; gap: 3px; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; background: #15181e; }
-  .inspection-grid span { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .07em; }
+  .export-grid, .print-export-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+  .export-grid article, .print-export-grid article { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: #171b22; }
+  .export-grid article > div, .print-export-grid article > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .export-grid article span, .print-export-grid article span { color: var(--muted); font-size: 10px; }
+  .export-grid article p, .print-export-grid article p { flex: 1; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+  .export-grid button, .print-export-grid button { width: 100%; padding: 9px 11px; }
+  .inspection-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .inspection-grid div { display: grid; gap: 3px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: #13161c; }
+  .inspection-grid span { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
   .inspection-grid strong { font-size: 11px; }
-  @media (max-width: 760px) {
+
+  .print-panel { padding: 18px; }
+  .print-layout { display: grid; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr); gap: 14px; margin-top: 16px; }
+  .print-controls, .print-result { min-width: 0; border: 1px solid var(--border); border-radius: 14px; background: #151920; }
+  .print-controls { display: grid; gap: 13px; padding: 14px; align-content: start; }
+  .print-controls label:not(.check-row) { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 650; }
+  .print-controls small, .control-note { color: #737d8e; font-size: 10px; line-height: 1.4; }
+  .input-with-unit { display: grid; grid-template-columns: 1fr auto; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: #0f1217; }
+  .input-with-unit input { min-width: 0; border: 0; padding: 9px 10px; color: var(--text); background: transparent; outline: none; }
+  .input-with-unit strong { display: grid; place-items: center; min-width: 42px; border-left: 1px solid var(--border); color: var(--muted); font-size: 10px; }
+  .rotation-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .rotation-grid select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px; color: var(--text); background: #0f1217; }
+  .check-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; }
+  .prepare-button { width: 100%; margin-top: 2px; }
+  .dirty-note { margin: 0; color: #dfc188; font-size: 10px; line-height: 1.4; }
+
+  .print-result { padding: 14px; }
+  .print-placeholder { display: grid; place-items: center; min-height: 260px; padding: 28px; text-align: center; }
+  .print-placeholder strong { font-size: 15px; }
+  .print-placeholder p { max-width: 480px; margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .print-status { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+  .print-status.printable { border-color: #3f6d58; background: #14231c; }
+  .print-status.incomplete { border-color: #6d593b; background: #251f15; }
+  .print-status > div { display: grid; gap: 3px; }
+  .print-status span { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+  .print-status strong { font-size: 13px; }
+  .print-status.printable strong { color: #bde0cd; }
+  .print-status.incomplete strong { color: #e5ca97; }
+  .print-status p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
+  .dimension-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 10px; }
+  .dimension-strip div, .topology-grid div { display: grid; gap: 3px; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; background: #11151a; }
+  .dimension-strip span, .topology-grid span { color: var(--muted); font-size: 9px; }
+  .dimension-strip strong, .topology-grid strong { font-size: 11px; }
+  .topology-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 7px; }
+  .topology-grid strong.good { color: #bde0cd; }
+  .repair-details { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; color: var(--accent-strong); font-size: 11px; }
+  .repair-details summary { padding: 9px 10px; cursor: pointer; }
+  .repair-details > div { padding: 0 10px 10px; color: var(--muted); line-height: 1.45; }
+  .repair-details p { margin: 4px 0; }
+  .repair-details ul { margin: 7px 0 0; padding-left: 18px; }
+  .repair-details .warnings { color: #dfc188; }
+  .print-export-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  @media (max-width: 800px) {
     .export-grid { grid-template-columns: 1fr; }
     .inspection-grid { grid-template-columns: repeat(2, 1fr); }
-    .export-intro { flex-direction: column; gap: 9px; }
+    .export-intro, .print-intro, .print-layout { grid-template-columns: 1fr; }
   }
   @media (max-width: 620px) {
-    .viewer-toolbar, .asset-strip { align-items: stretch; flex-direction: column; }
+    .viewer-toolbar { align-items: stretch; flex-direction: column; }
+    .toolbar-actions { display: grid; grid-template-columns: 1fr 1fr; }
+    .asset-strip { align-items: flex-start; flex-direction: column; }
     .asset-facts { justify-content: flex-start; }
+    .rotation-grid, .topology-grid, .dimension-strip, .print-export-grid { grid-template-columns: 1fr 1fr; }
   }
 </style>
