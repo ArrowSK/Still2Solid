@@ -7,12 +7,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ArrowSK/Still2Solid/releases/download/v0.8.0-family-preview/Still2Solid_0.8.0_aarch64.dmg"><img alt="Download Still2Solid for macOS Apple Silicon" src="https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-111827?style=for-the-badge&logo=apple&logoColor=white"></a>
-  <a href="https://github.com/ArrowSK/Still2Solid/releases/tag/v0.8.0-family-preview"><img alt="View GitHub Release" src="https://img.shields.io/badge/GitHub-v0.8.0%20Family%20Preview-2f81f7?style=for-the-badge&logo=github&logoColor=white"></a>
+  <a href="https://github.com/ArrowSK/Still2Solid/releases/download/v0.8.0/Still2Solid_0.8.0_aarch64.dmg"><img alt="Download Still2Solid for macOS Apple Silicon" src="https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-111827?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://github.com/ArrowSK/Still2Solid/releases/tag/v0.8.0"><img alt="View GitHub Release" src="https://img.shields.io/badge/GitHub-v0.8.0-2f81f7?style=for-the-badge&logo=github&logoColor=white"></a>
 </p>
 
 <p align="center">
-  <sub><strong>macOS Family Preview:</strong> Apple Silicon (M1/M2/M3/M4). Open the DMG and drag Still2Solid to Applications. This preview is currently unsigned, so macOS may require <em>Open Anyway</em> on first launch.</sub>
+  <sub><strong>macOS:</strong> Apple Silicon (M1/M2/M3/M4). Open the DMG and drag Still2Solid to Applications. The current build is unsigned, so macOS may require <em>Open Anyway</em> on first launch.</sub>
 </p>
 
 <p align="center">
@@ -25,17 +25,17 @@
 
 Still2Solid is a desktop image-to-3D application built around a deliberately simple workflow: choose an image, let the app assess the computer, generate locally, inspect the result and export it. The application is designed to stay understandable even though the model runtimes underneath it are not simple.
 
-> **Current state:** M1–M8 are implemented. A downloadable **v0.8.0 Family Preview** DMG for Apple Silicon macOS is published on GitHub Releases with a SHA-256 checksum. The preview is unsigned; a fully signed/notarized stable release still depends on Apple Developer credentials and final target-machine validation. The physical M1/8 GB benchmark remains an explicit validation gate.
+> **Current state:** M1–M8 are implemented. **Still2Solid v0.8.0** is published on GitHub Releases for Apple Silicon macOS with a SHA-256 checksum. The current macOS build is unsigned; Apple Developer signing and notarization remain a distribution-hardening task rather than a separate product edition. The physical M1/8 GB benchmark remains an explicit validation task for performance guidance.
 
 ## Install on macOS
 
-For an Apple Silicon Mac, use the **Download** button above or open the [v0.8.0 Family Preview release](https://github.com/ArrowSK/Still2Solid/releases/tag/v0.8.0-family-preview).
+For an Apple Silicon Mac, use the **Download** button above or open the [v0.8.0 release](https://github.com/ArrowSK/Still2Solid/releases/tag/v0.8.0).
 
 1. Download `Still2Solid_0.8.0_aarch64.dmg`.
 2. Open the DMG.
 3. Drag **Still2Solid** to **Applications**.
 4. Launch it from Applications or Launchpad.
-5. If macOS blocks the unsigned preview, use **System Settings → Privacy & Security → Open Anyway** once.
+5. If macOS blocks the unsigned build, use **System Settings → Privacy & Security → Open Anyway** once.
 
 Python is bundled in the packaged app. Production model weights are installed from inside Still2Solid when you choose to install a model.
 
@@ -127,9 +127,9 @@ Source images stay local. Generation runs locally. Still2Solid has no telemetry 
 | M6 | Complete | Print preparation, topology repair and 3MF. |
 | M7 | Complete in code | Bundled pinned Python runtime, active Tauri bundling, native icon set and cross-platform release workflow. |
 | M8 | Complete in code | Audited opt-in Stable Fast 3D adapter and multi-model generation path. |
-| macOS Family Preview | Published | Apple Silicon DMG and SHA-256 checksum are available from GitHub Releases. |
+| macOS v0.8.0 | Published | Apple Silicon DMG and SHA-256 checksum are available from GitHub Releases. |
 | Target-device validation | Open | Measure the physical M1/8 GB experience before changing its conservative recommendation. |
-| Signed stable release | Operational gate | Requires successful final platform validation plus configured signing/notarization credentials. |
+| Apple signing/notarization | Open | Configure Developer ID signing and notarization for a frictionless first-launch experience. |
 
 ## Contributing
 
