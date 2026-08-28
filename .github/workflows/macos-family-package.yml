@@ -37,7 +37,22 @@ jobs:
       - name: Validate bundled Python
         run: src-tauri/resources/python/bin/python3 -c "import sys; assert sys.version_info[:2] == (3, 12); print(sys.version)"
 
-      - name: Build Still2Solid DMG
+      - name: Detect Apple signing configuration
+        id: apple-signing
+        shell: bash
+        env:
+          CERTIFICATE_VALUE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD_VALUE: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY_VALUE: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [[ -n "$CERTIFICATE_VALUE" && -n "$CERTIFICATE_PASSWORD_VALUE" && -n "$SIGNING_IDENTITY_VALUE" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build signed Still2Solid DMG
+        if: steps.apple-signing.outputs.available == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -45,6 +60,10 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri:build -- --target aarch64-apple-darwin --bundles dmg
+
+      - name: Build unsigned Still2Solid DMG
+        if: steps.apple-signing.outputs.available != 'true'
         run: npm run tauri:build -- --target aarch64-apple-darwin --bundles dmg
 
       - name: Create checksum
