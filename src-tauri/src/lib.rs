@@ -1,4 +1,5 @@
 mod runtime;
+mod sf3d;
 
 use serde::Serialize;
 use std::process::Command;
@@ -141,6 +142,7 @@ fn get_hardware_profile() -> HardwareProfile {
 pub fn run() {
     tauri::Builder::default()
         .manage(Arc::new(runtime::RuntimeState::default()))
+        .manage(Arc::new(sf3d::Sf3dState::default()))
         .invoke_handler(tauri::generate_handler![
             get_hardware_profile,
             runtime::get_model_runtime_states,
@@ -148,6 +150,11 @@ pub fn run() {
             runtime::uninstall_model,
             runtime::generate_triposr,
             runtime::cancel_generation,
+            sf3d::get_sf3d_runtime_state,
+            sf3d::install_sf3d,
+            sf3d::uninstall_sf3d,
+            sf3d::generate_sf3d,
+            sf3d::cancel_sf3d,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Still2Solid");
