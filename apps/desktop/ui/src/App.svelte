@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import ModelManager from './lib/ModelManager.svelte';
   import ModelViewer from './lib/ModelViewer.svelte';
   import { getHardwareProfile } from './lib/hardware';
+  import { modelCandidateById } from './lib/modelCatalog';
   import { Mock3DAdapter } from './lib/mockAdapter';
-  import type { GenerationResult, HardwareProfile, ProgressEvent, QualityPreset } from './lib/types';
+  import { assessModels, recommendedProductionModel } from './lib/recommendation';
+  import type { GenerationResult, HardwareProfile, ModelAssessment, ProgressEvent, QualityPreset } from './lib/types';
 
   const adapter = new Mock3DAdapter();
   const qualities: Array<{ id: QualityPreset; title: string; detail: string }> = [
@@ -16,7 +19,15 @@
   let sourceFile: File | null = null;
   let sourceUrl = '';
   let hardware: HardwareProfile = {
-    platform: 'Detecting…', architecture: '—', chip: 'Detecting hardware…', memoryGb: 0, osVersion: '—', preferredBackend: 'Auto',
+    platform: 'Detecting…',
+    architecture: '—',
+    chip: 'Detecting hardware…',
+    memoryGb: 0,
+    osVersion: '—',
+    preferredBackend: 'Auto',
+    accelerators: [],
+    supportsMetal: false,
+    supportsCuda: false,
   };
   let progress: ProgressEvent | null = null;
   let result: GenerationResult | null = null;
@@ -29,8 +40,19 @@
   let wireframe = false;
   let showGrid = true;
   let fileInput: HTMLInputElement;
+  let modelManagerOpen = false;
+  let preferredProductionModelId = '';
+  let modelAssessments: ModelAssessment[] = [];
+
+  $: modelAssessments = assessModels(hardware);
+  $: automaticRecommendation = recommendedProductionModel(modelAssessments);
+  $: preferredAssessment = modelAssessments.find((item) => item.modelId === preferredProductionModelId);
+  $: preferredIsUsable = preferredAssessment && ['recommended', 'compatible', 'slow'].includes(preferredAssessment.compatibility);
+  $: productionAssessment = preferredIsUsable ? preferredAssessment : automaticRecommendation;
+  $: productionCandidate = productionAssessment ? modelCandidateById(productionAssessment.modelId) : undefined;
 
   onMount(async () => {
+    preferredProductionModelId = localStorage.getItem('still2solid.preferredProductionModel') ?? '';
     hardware = await getHardwareProfile();
   });
 
@@ -107,14 +129,17 @@
   };
 </script>
 
-<svelte:head><title>Still2Solid · M1</title></svelte:head>
+<svelte:head><title>Still2Solid · M2</title></svelte:head>
 
 <header class="topbar">
   <div>
     <div class="eyebrow">LOCAL IMAGE → 3D</div>
     <h1>Still2Solid</h1>
   </div>
-  <div class="milestone">M1 · Application shell</div>
+  <div class="top-actions">
+    <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>
+    <div class="milestone">M2 · Model intelligence</div>
+  </div>
 </header>
 
 <main class="page">
@@ -130,9 +155,20 @@
     >
       <div class="drop-icon">3D</div>
       <h2>Drop an image</h2>
-      <p>or choose one from this Mac. The file stays local.</p>
+      <p>or choose one from this computer. The file stays local.</p>
       <button type="button" class="primary">Choose image…</button>
       <input bind:this={fileInput} class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" on:change={(event) => selectFile(event.currentTarget.files?.[0])} />
+      <button type="button" class="model-hint" on:click|stopPropagation={() => (modelManagerOpen = true)}>
+        {#if productionCandidate}
+          <span>{preferredIsUsable ? 'Preferred production model' : 'Recommended for this computer'}</span>
+          <strong>{productionCandidate.manifest.name}</strong>
+          <small>{productionAssessment?.label} · inspect in Model Manager</small>
+        {:else}
+          <span>Production model</span>
+          <strong>No safe automatic recommendation yet</strong>
+          <small>Open Model Manager for the hardware assessment</small>
+        {/if}
+      </button>
     </section>
   {:else}
     <section class="workspace-grid">
@@ -147,18 +183,29 @@
       <div class="control-card">
         <div class="control-row">
           <div>
-            <label>Model</label>
+            <label>Active adapter</label>
             <strong>{adapter.manifest.name} <span class="badge">Development adapter</span></strong>
           </div>
           <details>
             <summary>Why this model?</summary>
             <div class="explanation">
-              <p><strong>Mock3D is intentionally selected for M1.</strong> It validates the application shell, adapter contract, progress reporting and preview without downloading or executing external model weights.</p>
-              <p>Your detected hardware is <strong>{hardware.chip}</strong>{hardware.memoryGb ? ` with ${hardware.memoryGb.toFixed(1)} GB memory` : ''}. Hardware-based production model recommendation is M2.</p>
-              <p>Licence: {adapter.manifest.license}. No external model licence applies.</p>
+              <p><strong>Mock3D remains the active inference adapter in M2.</strong> M2 adds model discovery and hardware-aware recommendation without pretending that a production worker already exists.</p>
+              {#if productionCandidate && productionAssessment}
+                <p><strong>{productionCandidate.manifest.name}</strong> is currently {preferredIsUsable ? 'your preferred M3 candidate' : 'the automatic production recommendation'} for this hardware. Status: {productionAssessment.label}.</p>
+                <p>{productionAssessment.reasons[0]}</p>
+              {:else}
+                <p>No production candidate currently clears the safe automatic threshold on the detected hardware.</p>
+              {/if}
+              <p>Open Model Manager for the full hardware and licence rationale.</p>
             </div>
           </details>
         </div>
+
+        <button type="button" class="recommendation-strip" on:click={() => (modelManagerOpen = true)}>
+          <span>{preferredIsUsable ? 'Preferred for M3' : 'Production recommendation'}</span>
+          <strong>{productionCandidate?.manifest.name ?? 'No safe recommendation'}</strong>
+          <small>{productionAssessment?.label ?? 'Inspect hardware constraints'}</small>
+        </button>
 
         <fieldset>
           <legend>Quality</legend>
@@ -186,7 +233,9 @@
             </label>
             <label class="check"><input type="checkbox" bind:checked={backgroundRemoval} disabled={generating} /> Isolate foreground object</label>
             <div class="diagnostic"><span>Detected</span><strong>{hardware.platform} · {hardware.architecture}</strong></div>
+            <div class="diagnostic"><span>Memory</span><strong>{hardware.memoryGb ? `${hardware.memoryGb.toFixed(1)} GB` : 'Unavailable in browser preview'}</strong></div>
             <div class="diagnostic"><span>Preferred backend</span><strong>{hardware.preferredBackend}</strong></div>
+            <div class="diagnostic"><span>Accelerator</span><strong>{hardware.accelerators[0]?.name ?? 'None detected'}</strong></div>
           </div>
         {/if}
 
@@ -230,12 +279,19 @@
         <label class="check"><input type="checkbox" bind:checked={showGrid} /> Grid</label>
         <button type="button" class="secondary" on:click={generate}>Regenerate</button>
       </div>
-      <p class="development-note">This is the deterministic M1 Mock3D result. It intentionally uses a known cube-like mesh and the selected image as a texture so the complete desktop workflow can be tested before production model inference is added.</p>
+      <p class="development-note">This is still the deterministic Mock3D result. M2 selects and explains production candidates, but production model downloads and isolated inference workers are intentionally deferred to M3.</p>
     </section>
   {/if}
 </main>
 
+<ModelManager
+  bind:open={modelManagerOpen}
+  bind:preferredModelId={preferredProductionModelId}
+  {hardware}
+  assessments={modelAssessments}
+/>
+
 <footer>
-  <span>Still2Solid M1</span>
-  <span>Local-first · no external model weights · no telemetry</span>
+  <span>Still2Solid M2</span>
+  <span>Local-first · hardware-aware model catalogue · no telemetry</span>
 </footer>

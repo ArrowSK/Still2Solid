@@ -6,7 +6,9 @@ Still2Solid is being built as a hardware-aware, model-agnostic workflow: drop an
 
 ## Status
 
-Early development. Milestone M1 establishes the desktop application shell and deterministic Mock3D adapter used to validate the UX and adapter contract before integrating production inference models.
+Milestone M2 adds a hardware-aware Model Manager on top of the M1 desktop shell. The application now detects local accelerator capabilities, assesses a curated production-model catalogue, explains compatibility and licence constraints, and can remember a preferred production candidate.
+
+M2 deliberately keeps deterministic Mock3D as the only executable adapter. Production model downloads, checksum-verified installation and isolated inference workers are M3 work; the UI does not pretend otherwise.
 
 ## Licence
 

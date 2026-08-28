@@ -15,6 +15,7 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run check
+      - run: npm run test
       - run: npm run build
 
   rust-core:
@@ -23,3 +24,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
