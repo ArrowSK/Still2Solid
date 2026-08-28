@@ -1,0 +1,19 @@
+[package]
+name = "still2solid"
+version = "0.1.0"
+description = "Local-first image-to-3D desktop application"
+authors = ["Still2Solid contributors"]
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+name = "still2solid_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sysinfo = "0.32"
+tauri = { version = "2", features = [] }
