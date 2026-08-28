@@ -1,23 +1,23 @@
 # Models & Hardware
 
-Still2Solid treats model choice as a product and safety decision, not a dropdown of every model that can be found online.
+Still2Solid treats model choice as a product, licence and reliability decision rather than exposing every model available online.
 
-The Model Manager combines three things:
+Model Manager combines three questions:
 
 1. what the computer can plausibly run;
-2. what the upstream model actually supports;
-3. whether the model's licence is appropriate for the catalogue and intended use.
+2. what the upstream implementation actually supports;
+3. whether the model's licence/gating is appropriate for automatic or explicit use.
 
-A model can therefore be visible without being automatically recommended.
+A model can therefore be installed and usable without being an automatic recommendation.
 
 ## Compatibility labels
 
 | Label | Meaning |
 | --- | --- |
-| **Recommended** | Best safe automatic choice among the currently reviewed candidates for this hardware. |
+| **Recommended** | Best safe automatic choice among reviewed candidates for this hardware. |
 | **Compatible** | Hardware/policy checks pass, but another candidate may be preferred. |
 | **Compatible · slow path** | Expected to work through a slower backend such as CPU. |
-| **Memory constrained** | Technically possible in some circumstances, but memory pressure is high enough that Still2Solid will not present it as a safe normal choice. |
+| **Memory constrained** | Possible in some circumstances, but memory pressure is high enough that Still2Solid will not present it as a safe normal choice. |
 | **Unsupported** | Platform/backend requirements do not match. |
 | **Licence restricted** | Licence/gating prevents normal catalogue use or automatic selection. |
 
@@ -25,91 +25,89 @@ These labels are intentionally conservative. “Compatible” is not a benchmark
 
 ## TripoSR
 
-**Role:** first production adapter.
+**Role:** primary permissive production adapter.
 
-Why it was selected:
+Why it remains the default:
 
 - official code and pretrained weights are MIT licensed;
-- materially lighter than the large modern alternatives reviewed for this project;
-- supports the single-image-to-3D workflow Still2Solid needs;
-- can produce textured output;
-- its runtime can be isolated and pinned without `trust_remote_code=True`.
+- materially lighter than the large alternatives reviewed for this project;
+- fits the single-image-to-textured-3D workflow;
+- can be installed from immutable source/model revisions with integrity checks;
+- does not require `trust_remote_code=True`;
+- works with Still2Solid's one-shot worker/canonical-GLB architecture.
 
-The upstream default is commonly described around a ~6 GB VRAM class workload. Still2Solid uses more conservative product presets than upstream defaults to reduce pressure on consumer hardware.
+The upstream default is commonly described around a ~6 GB VRAM class workload. Still2Solid uses conservative product settings and does not translate that figure into an unsupported promise for unified-memory Macs.
 
 ### Apple Silicon
 
-Apple Silicon is detected as unified-memory hardware. Still2Solid exposes Metal/MPS as a backend option where the runtime supports it, but **TripoSR upstream does not provide a Still2Solid-quality guarantee for MPS**. Backend support must be validated empirically.
+Apple Silicon is detected as unified-memory hardware. Metal/MPS can be exposed as a backend option, but TripoSR upstream does not provide a Still2Solid-quality guarantee for MPS.
 
 Current policy:
 
 - 16 GB+ Apple Silicon can clear the catalogue compatibility threshold with caveats;
-- 8 GB Apple Silicon is **Memory constrained** and is not automatically recommended;
-- an explicit experimental install can still be offered so the path can be benchmarked rather than artificially blocked.
+- 8 GB Apple Silicon remains **Memory constrained** and is not automatically recommended;
+- an explicit experimental install is available so the actual target can be measured.
 
-The actual 8 GB M1 target-device benchmark remains an open validation gate before release policy is relaxed.
+The 8 GB M1 target-device benchmark remains an open validation gate.
 
-### NVIDIA
+### NVIDIA and CPU
 
-NVIDIA hardware is detected through `nvidia-smi` when available. CUDA is the most natural acceleration path for TripoSR. Less than roughly 6 GB reported VRAM is conservatively treated as memory constrained by the current policy.
-
-### CPU
-
-CPU is the fallback path when acceleration is unavailable or inappropriate. It can be significantly slower and is labelled accordingly.
+NVIDIA hardware is detected through `nvidia-smi` when available. Less than roughly 6 GB reported VRAM is conservatively treated as memory constrained for TripoSR. CPU remains the fallback path when acceleration is unavailable or inappropriate and may be substantially slower.
 
 ## Stable Fast 3D (SF3D)
 
-Still2Solid keeps SF3D as a reviewed catalogue candidate rather than a normal automatic choice.
+**Role:** second production adapter, explicit opt-in only.
 
-Important upstream constraints reflected in the catalogue:
+M8 turns SF3D from a catalogue-only entry into a real local adapter while preserving its licence and hardware restrictions.
 
+Important constraints:
+
+- upstream source is pinned to GitHub commit `ff21fc491b4dc5314bf6734c7c0dabd86b5f5bb2`;
+- the gated Hugging Face model is pinned to revision `f0c9a8ffd62cb1bbc8a7a53c9f87a0be1b6be778` and its checkpoint is SHA-256 verified;
 - MPS support is experimental;
-- upstream testing cited high-memory Apple hardware;
-- upstream guidance recommends CPU below 32 GB unified memory because its MPS path can use more memory;
-- the Stability AI Community License is conditional and the model is gated.
+- upstream guidance recommends CPU below 32 GB unified memory because the MPS path can consume more memory;
+- the Stability AI Community License is conditional and the model repository is gated;
+- installation therefore requires explicit licence acknowledgement and a user-supplied Hugging Face read token;
+- Still2Solid does not store that token;
+- SF3D is never an automatic recommendation even when hardware compatibility looks acceptable.
 
-Because of the licence/gating status, Still2Solid does **not** silently auto-select SF3D even when hardware compatibility looks acceptable.
+When selected, SF3D uses the same one-shot local generation, progress/cancellation, canonical GLB, preview/export and print-preparation layers as TripoSR.
 
 ## TRELLIS.2 4B
 
-TRELLIS.2 is reviewed as a powerful but heavy candidate.
-
-The official environment is Linux + NVIDIA with at least about 24 GB VRAM. That makes it unsuitable for the low-memory Apple Silicon product target. A suitable Linux/NVIDIA workstation can pass the hardware assessment, but runtime dependencies still require separate licence review before production integration.
+TRELLIS.2 remains catalogue-only. The official environment is Linux + NVIDIA with at least about 24 GB VRAM. A suitable workstation can pass the hardware assessment, but this does not create an executable adapter; its runtime/dependency review remains separate from M8.
 
 ## Why Hunyuan3D 2.1 is absent
 
-Hunyuan3D 2.1 is intentionally excluded from the official catalogue because its published licence excludes use in the European Union, United Kingdom and South Korea. Still2Solid does not encourage users to work around a regional licence restriction.
+Hunyuan3D 2.1 is intentionally excluded from the official catalogue because its published licence excludes use in the European Union, United Kingdom and South Korea. Still2Solid does not encourage workarounds for regional licence restrictions.
 
-## Model installation security
+## Production model installation security
 
-A production model is not activated just because a folder exists.
+A model is not activated merely because files were downloaded. Production installers must:
 
-The TripoSR installer:
+- use allowlisted model IDs;
+- use immutable upstream source and model revisions;
+- verify executable/model assets before activation;
+- stage installation separately from the active runtime;
+- discard incomplete/broken staging state;
+- avoid arbitrary downloaded remote code;
+- keep credentials out of persistent application state;
+- leave inference capable of running offline after installation.
 
-- uses an allowlisted model ID;
-- pins the upstream source revision;
-- pins the model revision;
-- verifies source files against Git blob hashes;
-- verifies the checkpoint with SHA-256;
-- verifies the foreground-removal asset;
-- stages installation before activation;
-- removes/abandons incomplete staging state when verification fails;
-- never enables arbitrary remote code execution.
+Generation then runs in a one-shot local child process rather than a persistent server.
 
-Generation then runs in a one-shot local child process rather than a permanent server.
+## Adding a later model
 
-## Adding another model
+A future adapter must answer all of the following before it becomes executable:
 
-A future model should not be added to the production catalogue until all of the following are answered:
-
-- Is the licence usable in the target regions and for the intended commercial/non-commercial use?
-- Can the exact source/model revision be pinned?
-- Can every required executable/model asset be verified?
-- Does it require `trust_remote_code` or arbitrary downloaded code?
-- What hardware/backend combination has actually been tested?
-- What is the memory floor?
-- Does it return a format that fits the canonical-asset contract?
+- Is its licence usable in intended regions and use cases?
+- Can exact source/model revisions be immutable?
+- Can required executable/model assets be integrity-verified?
+- Does it require arbitrary remote code?
+- Which hardware/backend combinations have actually been tested?
+- What is the realistic memory floor?
+- Does its output fit the canonical-asset contract?
 - Can cancellation and process cleanup be implemented safely?
-- Can CI test the adapter without downloading multi-gigabyte weights?
+- Can CI validate integration without downloading multi-gigabyte weights?
 
-See [Model Licence Policy](MODEL_LICENSE_POLICY.md) and [Architecture](ARCHITECTURE.md).
+See [Model Licence Policy](MODEL_LICENSE_POLICY.md), [M8](M8.md) and [Architecture](ARCHITECTURE.md).
