@@ -100,7 +100,7 @@ struct InstallerProgress {
     message: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct InstallProgressEvent {
     model_id: String,
