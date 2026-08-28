@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import BackgroundAdvisor from './lib/BackgroundAdvisor.svelte';
-  import ModelManager from './lib/ModelManager.svelte';
+  import ModelManager from './lib/ModelManagerM8.svelte';
   import ModelViewer from './lib/ModelViewer.svelte';
   import { getHardwareProfile } from './lib/hardware';
   import { modelCandidateById } from './lib/modelCatalog';
@@ -16,6 +16,7 @@
     recordSuccessfulTiming,
     timingContextKey,
   } from './lib/timing';
+  import { Sf3DAdapter } from './lib/sf3dAdapter';
   import { TripoSRAdapter } from './lib/triposrAdapter';
   import type {
     GenerationResult,
@@ -32,6 +33,7 @@
 
   const mockAdapter = new Mock3DAdapter();
   const triposrAdapter = new TripoSRAdapter();
+  const sf3dAdapter = new Sf3DAdapter();
   const qualities: Array<{ id: QualityPreset; title: string; detail: string }> = [
     { id: 'fast', title: 'Fast', detail: 'Lowest memory pressure and quickest mesh' },
     { id: 'standard', title: 'Standard', detail: 'Balanced geometry and texture detail' },
@@ -85,14 +87,18 @@
   $: modelAssessments = assessModels(hardware);
   $: automaticRecommendation = recommendedProductionModel(modelAssessments);
   $: preferredAssessment = modelAssessments.find((item) => item.modelId === preferredProductionModelId);
-  $: preferredIsUsable = preferredAssessment && preferredAssessment.compatibility !== 'unsupported';
+  $: preferredIsUsable = !!preferredAssessment && !['unsupported', 'license-restricted'].includes(preferredAssessment.compatibility);
   $: productionAssessment = preferredIsUsable ? preferredAssessment : automaticRecommendation;
   $: productionCandidate = productionAssessment ? modelCandidateById(productionAssessment.modelId) : undefined;
+  $: selectedProductionId = productionAssessment?.modelId ?? '';
+  $: selectedRuntime = runtimeStates.find((runtime) => runtime.modelId === selectedProductionId);
   $: triposrRuntime = runtimeStates.find((runtime) => runtime.modelId === 'triposr');
-  $: triposrAssessment = modelAssessments.find((assessment) => assessment.modelId === 'triposr');
-  $: explicitTripo = preferredProductionModelId === 'triposr' && triposrAssessment?.compatibility !== 'unsupported';
-  $: automaticTripo = !preferredProductionModelId && automaticRecommendation?.modelId === 'triposr';
-  $: activeAdapter = triposrRuntime?.canGenerate && (explicitTripo || automaticTripo) ? triposrAdapter : mockAdapter;
+  $: sf3dRuntime = runtimeStates.find((runtime) => runtime.modelId === 'sf3d');
+  $: activeAdapter = selectedProductionId === 'triposr' && triposrRuntime?.canGenerate
+    ? triposrAdapter
+    : selectedProductionId === 'sf3d' && sf3dRuntime?.canGenerate
+      ? sf3dAdapter
+      : mockAdapter;
 
   $: currentTimingContext = createTimingContext(hardware, activeAdapter, quality, backend, backgroundRemoval);
   $: currentTimingKey = timingContextKey(currentTimingContext);
@@ -202,12 +208,12 @@
     const adapterForJob = activeAdapter;
     const contextForJob = createTimingContext(hardware, adapterForJob, quality, backend, backgroundRemoval);
     jobAdapter = adapterForJob;
-    jobTimingProfile = adapterForJob.manifest.id === 'triposr' ? loadTimingProfile(contextForJob) : null;
+    jobTimingProfile = adapterForJob.manifest.id !== 'mock3d' ? loadTimingProfile(contextForJob) : null;
     rawProgressTrace = [];
     progressReceivedAt = 0;
 
     try {
-      const isProduction = adapterForJob.manifest.id === 'triposr';
+      const isProduction = adapterForJob.manifest.id !== 'mock3d';
       const sourceBytes = isProduction ? await prepareProductionImage() : undefined;
       const generated = await adapterForJob.generate(
         {
@@ -229,7 +235,7 @@
       result = generated;
       decodeGeneratedAsset(generated);
 
-      if (generated.modelId === 'triposr') {
+      if (generated.modelId !== 'mock3d') {
         const resolvedBackend = typeof generated.metadata.backend === 'string'
           ? generated.metadata.backend
           : backend;
@@ -283,7 +289,7 @@
   }
 
   function stageLabel(stageId: string): string {
-    return activeAdapter.manifest.stages.find((stage) => stage.id === stageId)?.label ?? stageId;
+    return (jobAdapter ?? activeAdapter).manifest.stages.find((stage) => stage.id === stageId)?.label ?? stageId;
   }
 
   const stageState = (id: string) => {
@@ -297,7 +303,7 @@
   };
 </script>
 
-<svelte:head><title>Still2Solid · M6</title></svelte:head>
+<svelte:head><title>Still2Solid · M8</title></svelte:head>
 
 <header class="topbar">
   <div>
@@ -306,7 +312,7 @@
   </div>
   <div class="top-actions">
     <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>
-    <div class="milestone">M6 · Print prep</div>
+    <div class="milestone">M8 · Multi-model local</div>
   </div>
 </header>
 
@@ -327,18 +333,18 @@
       <button type="button" class="primary">Choose image…</button>
       <input bind:this={fileInput} class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" on:change={(event) => selectFile(event.currentTarget.files?.[0])} />
       <button type="button" class="model-hint" on:click|stopPropagation={() => (modelManagerOpen = true)}>
-        {#if activeAdapter.manifest.id === 'triposr'}
+        {#if activeAdapter.manifest.id !== 'mock3d'}
           <span>Ready for local production inference</span>
-          <strong>TripoSR</strong>
-          <small>Verified runtime installed · timing improves automatically with successful runs</small>
+          <strong>{activeAdapter.manifest.name}</strong>
+          <small>Verified local runtime · timing improves automatically with successful runs</small>
         {:else if productionCandidate}
           <span>{preferredIsUsable ? 'Preferred production model' : 'Recommended for this computer'}</span>
           <strong>{productionCandidate.manifest.name}</strong>
-          <small>{triposrRuntime?.installed ? 'Runtime not selected or not ready' : 'Open Model Manager to install a runtime'}</small>
+          <small>{selectedRuntime?.installed ? 'Runtime not selected or not ready' : 'Open Model Manager to install a runtime'}</small>
         {:else}
           <span>Production model</span>
           <strong>Mock3D fallback is active</strong>
-          <small>Open Model Manager for the hardware assessment and experimental install option</small>
+          <small>Open Model Manager for the hardware assessment and experimental install options</small>
         {/if}
       </button>
     </section>
@@ -356,17 +362,17 @@
         <div class="control-row">
           <div>
             <span class="control-label">Active adapter</span>
-            <strong>{activeAdapter.manifest.name} <span class="badge">{activeAdapter.manifest.id === 'triposr' ? 'Production adapter' : 'Development fallback'}</span></strong>
+            <strong>{activeAdapter.manifest.name} <span class="badge">{activeAdapter.manifest.id !== 'mock3d' ? 'Production adapter' : 'Development fallback'}</span></strong>
           </div>
           <details>
             <summary>Why this model?</summary>
             <div class="explanation">
-              {#if activeAdapter.manifest.id === 'triposr'}
-                <p><strong>TripoSR is installed, checksum-verified and selected.</strong> Each generation runs in a one-shot isolated local process and unloads when it finishes.</p>
+              {#if activeAdapter.manifest.id !== 'mock3d'}
+                <p><strong>{activeAdapter.manifest.name} is installed, verified and selected.</strong> Each generation runs in a one-shot isolated local process and unloads when it finishes.</p>
                 <p>M4 timing remains local, M5 keeps each production GLB as the canonical master, and M6 prepares a separate print copy without modifying that master.</p>
               {:else}
                 <p><strong>Mock3D is the safe fallback.</strong> A production adapter is used only after its runtime is installed, verified and selected.</p>
-                {#if triposrRuntime}<p>{triposrRuntime.detail}</p>{/if}
+                {#if selectedRuntime}<p>{selectedRuntime.detail}</p>{/if}
               {/if}
               <p>Open Model Manager for hardware, licence and installation details.</p>
             </div>
@@ -374,9 +380,9 @@
         </div>
 
         <button type="button" class="recommendation-strip" on:click={() => (modelManagerOpen = true)}>
-          <span>{activeAdapter.manifest.id === 'triposr' ? 'Production runtime' : preferredIsUsable ? 'Preferred candidate' : 'Production recommendation'}</span>
-          <strong>{activeAdapter.manifest.id === 'triposr' ? 'TripoSR · ready' : productionCandidate?.manifest.name ?? 'No safe recommendation'}</strong>
-          <small>{activeAdapter.manifest.id === 'triposr' ? 'Verified local install' : productionAssessment?.label ?? 'Inspect hardware constraints'}</small>
+          <span>{activeAdapter.manifest.id !== 'mock3d' ? 'Production runtime' : preferredIsUsable ? 'Preferred candidate' : 'Production recommendation'}</span>
+          <strong>{activeAdapter.manifest.id !== 'mock3d' ? `${activeAdapter.manifest.name} · ready` : productionCandidate?.manifest.name ?? 'No safe recommendation'}</strong>
+          <small>{activeAdapter.manifest.id !== 'mock3d' ? 'Verified local install' : productionAssessment?.label ?? 'Inspect hardware constraints'}</small>
         </button>
 
         <BackgroundAdvisor imageUrl={sourceUrl} bind:enabled={backgroundRemoval} disabled={generating} />
@@ -412,7 +418,7 @@
             <div class="diagnostic"><span>Preferred backend</span><strong>{hardware.preferredBackend}</strong></div>
             <div class="diagnostic"><span>Accelerator</span><strong>{hardware.accelerators[0]?.name ?? 'None detected'}</strong></div>
 
-            {#if activeAdapter.manifest.id === 'triposr'}
+            {#if activeAdapter.manifest.id !== 'mock3d'}
               <section class="timing-card" aria-label="Local timing profile">
                 <div class="timing-heading">
                   <div>
@@ -458,7 +464,7 @@
         {/if}
 
         <button type="button" class="primary generate" on:click={generate} disabled={generating || !sourceFile}>
-          {generating ? 'Generating…' : activeAdapter.manifest.id === 'triposr' ? 'Generate 3D locally' : 'Generate Mock3D'}
+          {generating ? 'Generating…' : activeAdapter.manifest.id !== 'mock3d' ? 'Generate 3D locally' : 'Generate Mock3D'}
         </button>
       </div>
     </section>
@@ -471,7 +477,7 @@
   {#if generating && displayProgress}
     <section class="progress-card" aria-live="polite">
       <div class="progress-heading">
-        <div><span class="eyebrow">{jobAdapter?.manifest.id === 'triposr' ? 'LOCAL PRODUCTION GENERATION' : 'MOCK GENERATION'}</span><h2>{displayProgress.stageName}</h2></div>
+        <div><span class="eyebrow">{jobAdapter?.manifest.id !== 'mock3d' ? 'LOCAL PRODUCTION GENERATION' : 'MOCK GENERATION'}</span><h2>{displayProgress.stageName}</h2></div>
         <strong>{Math.round(displayProgress.overallProgress * 100)}%</strong>
       </div>
       <div class="bar"><div style={`width:${displayProgress.overallProgress * 100}%`}></div></div>
@@ -479,15 +485,15 @@
         <span>{displayProgress.statusMessage}</span>
         {#if displayProgress.etaSeconds > 0.5}
           <span>About {Math.ceil(displayProgress.etaSeconds)} s remaining · {displayProgress.etaConfidence} confidence</span>
-        {:else if jobAdapter?.manifest.id === 'triposr' && jobTimingProfile?.sampleCount}
+        {:else if jobAdapter?.manifest.id !== 'mock3d' && jobTimingProfile?.sampleCount}
           <span>Running beyond the learned median · {jobTimingProfile.confidence} confidence</span>
-        {:else if jobAdapter?.manifest.id === 'triposr'}
+        {:else if jobAdapter?.manifest.id !== 'mock3d'}
           <span>Learning timing from this successful run</span>
         {:else}
           <span>Estimated development timing</span>
         {/if}
       </div>
-      {#if jobAdapter?.manifest.id === 'triposr'}
+      {#if jobAdapter?.manifest.id !== 'mock3d'}
         <div class="estimate-note">{jobTimingProfile?.sampleCount ? `Learned locally from ${jobTimingProfile.sampleCount} comparable run${jobTimingProfile.sampleCount === 1 ? '' : 's'}.` : 'No prior comparable run exists yet; stage progress is shown without a learned ETA.'}</div>
       {/if}
       <ol class="stages">
@@ -512,10 +518,10 @@
         <button type="button" class="secondary" on:click={generate}>Regenerate</button>
       </div>
       {#if result.warning}<p class="result-warning">{result.warning}</p>{/if}
-      {#if result.modelId === 'triposr'}
-        <p class="development-note">The validated GLB remains the canonical master. Use Export for GLB/OBJ/raw STL, or Prepare for print to set millimetre size, inspect/repair topology and export 3MF or a prepared STL. M4 timing continues to learn only from successful local generations.</p>
+      {#if result.modelId !== 'mock3d'}
+        <p class="development-note">The validated GLB remains the canonical master. Use Export for GLB/OBJ/raw STL, or Prepare for print to set millimetre size, inspect/repair topology and export 3MF or a prepared STL. Local timing continues to learn only from successful generations on this machine.</p>
       {:else}
-        <p class="development-note">This is the deterministic Mock3D fallback. Install and select TripoSR in Model Manager to enable production inference, canonical production assets and learned local timing.</p>
+        <p class="development-note">This is the deterministic Mock3D fallback. Install and select a supported production model in Model Manager to enable production inference, canonical production assets and learned local timing.</p>
       {/if}
     </section>
   {/if}
@@ -530,6 +536,6 @@
 />
 
 <footer>
-  <span>Still2Solid M6</span>
-  <span>Local-first · canonical GLB + print prep + 3MF · learned ETA stays local · no telemetry</span>
+  <span>Still2Solid M8</span>
+  <span>Local-first · TripoSR + opt-in SF3D · bundled runtime · canonical GLB + print prep · no telemetry</span>
 </footer>
