@@ -1,0 +1,135 @@
+name: M7 patch bundled runtime
+
+on:
+  push:
+    branches: [branding/app-logo]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branding/app-logo
+          fetch-depth: 0
+      - name: Prefer verified bundled Python
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src-tauri/src/runtime.rs')
+          text = p.read_text()
+          old = '''fn find_python() -> Result<(String, String), String> {
+    let mut candidates = Vec::<String>::new();
+    if let Ok(explicit) = std::env::var("STILL2SOLID_PYTHON") {
+        if !explicit.trim().is_empty() {
+            candidates.push(explicit);
+        }
+    }
+    for candidate in ["python3.12", "python3.11", "python3"] {
+        if !candidates.iter().any(|value| value == candidate) {
+            candidates.push(candidate.to_string());
+        }
+    }
+
+    for candidate in candidates {
+        let output = Command::new(&candidate)
+            .args([
+                "-c",
+                "import sys; print(f'{sys.version_info.major}|{sys.version_info.minor}|{sys.version.split()[0]}')",
+            ])
+            .output();
+        let Ok(output) = output else { continue };
+        if !output.status.success() {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        if let Some((3, minor, version)) = parse_python_probe(&text) {
+            if minor == 11 || minor == 12 {
+                return Ok((candidate, version));
+            }
+        }
+    }
+
+    Err("M3 currently requires a local Python 3.11 or 3.12 interpreter to create the isolated TripoSR runtime. A bundled end-user Python runtime is a later packaging milestone.".to_string())
+}'''
+          new = '''fn find_python(app: &AppHandle) -> Result<(String, String), String> {
+    let mut candidates = Vec::<String>::new();
+
+    // M7 release bundles place a pinned python-build-standalone runtime in the
+    // application resources. Check both Tauri's mapped release layout and the
+    // development resource layout before considering a system interpreter.
+    if let Ok(resources) = app.path().resource_dir() {
+        #[cfg(target_os = "windows")]
+        let executable = "python.exe";
+        #[cfg(not(target_os = "windows"))]
+        let executable = "bin/python3";
+        for base in [resources.join("python"), resources.join("resources").join("python")] {
+            let path = base.join(executable);
+            if path.exists() {
+                candidates.push(path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // STILL2SOLID_PYTHON remains a deliberate developer override. System
+    // discovery is kept as a source-build fallback, not as a release-user step.
+    if let Ok(explicit) = std::env::var("STILL2SOLID_PYTHON") {
+        if !explicit.trim().is_empty() && !candidates.iter().any(|value| value == &explicit) {
+            candidates.push(explicit);
+        }
+    }
+    #[cfg(target_os = "windows")]
+    let system_candidates = ["python.exe", "python3.12.exe", "python3.11.exe"];
+    #[cfg(not(target_os = "windows"))]
+    let system_candidates = ["python3.12", "python3.11", "python3"];
+    for candidate in system_candidates {
+        if !candidates.iter().any(|value| value == candidate) {
+            candidates.push(candidate.to_string());
+        }
+    }
+
+    for candidate in candidates {
+        let output = Command::new(&candidate)
+            .args([
+                "-c",
+                "import sys; print(f'{sys.version_info.major}|{sys.version_info.minor}|{sys.version.split()[0]}')",
+            ])
+            .output();
+        let Ok(output) = output else { continue };
+        if !output.status.success() {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        if let Some((3, minor, version)) = parse_python_probe(&text) {
+            if minor == 11 || minor == 12 {
+                return Ok((candidate, version));
+            }
+        }
+    }
+
+    Err("Still2Solid could not find its bundled Python 3.12 runtime. Development builds may use Python 3.11/3.12 via STILL2SOLID_PYTHON; release builds should be repaired or reinstalled instead of asking the user to configure Python manually.".to_string())
+}'''
+          if old not in text:
+              if 'fn find_python(app: &AppHandle)' in text:
+                  print('runtime patch already present')
+              else:
+                  raise SystemExit('find_python anchor changed; refusing broad rewrite')
+          else:
+              text = text.replace(old, new, 1)
+          text = text.replace('let (system_python, python_version) = find_python()?;', 'let (system_python, python_version) = find_python(&app)?;', 1)
+          p.write_text(text)
+          PY
+      - name: Commit
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/src/runtime.rs
+          git commit -m "M7: prefer bundled pinned Python runtime"
+          git push origin HEAD:branding/app-logo
