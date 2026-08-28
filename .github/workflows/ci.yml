@@ -17,6 +17,8 @@ jobs:
       - run: npm run check
       - run: npm run test
       - run: npm run build
+      - name: Validate production worker syntax
+        run: python3 -m py_compile workers/triposr/worker.py
 
   rust-core:
     runs-on: macos-14

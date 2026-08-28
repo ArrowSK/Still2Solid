@@ -1,6 +1,6 @@
 [package]
 name = "still2solid"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local-first image-to-3D desktop application"
 authors = ["Still2Solid contributors"]
 edition = "2021"
@@ -14,6 +14,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+base64 = "0.22"
+hex = "0.4"
+md5 = "0.7"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+sha2 = "0.10"
 sysinfo = "0.32"
 tauri = { version = "2", features = [] }
+uuid = { version = "1", features = ["v4"] }

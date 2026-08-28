@@ -19,13 +19,14 @@ export const modelCandidates: ModelCandidate[] = [
     availability: 'bundled',
     hardwareNotes: ['Runs everywhere the desktop application runs.', 'Does not perform AI inference.'],
     licenseNote: 'No external model weights or model licence apply.',
+    runtimeAdapter: null,
   },
   {
     manifest: {
       id: 'triposr',
       name: 'TripoSR',
       family: 'TripoSR',
-      version: 'stabilityai/TripoSR',
+      version: 'HF 5b521936 · source 107cefdc',
       license: 'MIT',
       licenseStatus: 'verified-permissive',
       supportsTexture: true,
@@ -35,14 +36,16 @@ export const modelCandidates: ModelCandidate[] = [
       stages: reconstructionStages,
     },
     summary: 'Fast single-image reconstruction with a comparatively small model footprint and permissive licensing.',
-    sourceLabel: 'Hugging Face · stabilityai/TripoSR',
+    sourceLabel: 'VAST-AI-Research/TripoSR + stabilityai/TripoSR',
     availability: 'catalog-only',
     hardwareNotes: [
+      'M3 pins upstream source commit 107cefdc244c39106fa830359024f6a2f1c78871.',
+      'M3 pins model revision 5b521936b01fbe1890f6f9baed0254ab6351c04a and verifies its checkpoint SHA-256.',
       'Upstream documents about 6 GB VRAM for the default single-image path.',
-      'CUDA is the documented accelerated path; CPU execution is available through the upstream stack.',
-      'Still2Solid does not treat Apple MPS as certified for TripoSR until the production adapter is validated.',
+      'M3 uses conservative extraction chunks and a CPU marching-cubes shim to avoid the upstream torchmcubes build on Apple Silicon.',
     ],
-    licenseNote: 'The upstream repository and model card identify the code and pretrained model as MIT licensed.',
+    licenseNote: 'The upstream repository states that source code and pretrained models are MIT licensed. Still2Solid stores the upstream licence with the installed source.',
+    runtimeAdapter: 'triposr',
   },
   {
     manifest: {
@@ -67,6 +70,7 @@ export const modelCandidates: ModelCandidate[] = [
       'CUDA and CPU execution are supported by the upstream project.',
     ],
     licenseNote: 'Gated access. Commercial use is subject to the Stability AI Community License, including its current revenue and registration terms.',
+    runtimeAdapter: null,
   },
   {
     manifest: {
@@ -91,6 +95,7 @@ export const modelCandidates: ModelCandidate[] = [
       'Several runtime dependencies have licences separate from the model licence.',
     ],
     licenseNote: 'The model and main code are MIT licensed; runtime dependencies must be reviewed separately before distribution.',
+    runtimeAdapter: null,
   },
 ];
 

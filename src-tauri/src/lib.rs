@@ -1,5 +1,8 @@
+mod runtime;
+
 use serde::Serialize;
 use std::process::Command;
+use std::sync::Arc;
 use sysinfo::System;
 
 #[derive(Debug, Clone, Serialize)]
@@ -108,7 +111,7 @@ fn get_hardware_profile() -> HardwareProfile {
     }
 
     let preferred_backend = if supports_metal {
-        "Metal / MPS (when supported by model adapter)".to_string()
+        "Metal / MPS (production adapter validates availability at runtime)".to_string()
     } else if supports_cuda {
         "CUDA".to_string()
     } else {
@@ -137,7 +140,15 @@ fn get_hardware_profile() -> HardwareProfile {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_hardware_profile])
+        .manage(Arc::new(runtime::RuntimeState::default()))
+        .invoke_handler(tauri::generate_handler![
+            get_hardware_profile,
+            runtime::get_model_runtime_states,
+            runtime::install_model,
+            runtime::uninstall_model,
+            runtime::generate_triposr,
+            runtime::cancel_generation,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Still2Solid");
 }

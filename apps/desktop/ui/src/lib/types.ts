@@ -50,6 +50,7 @@ export interface ModelCandidate {
   availability: ModelAvailability;
   hardwareNotes: string[];
   licenseNote: string;
+  runtimeAdapter: 'triposr' | null;
 }
 
 export interface ModelAssessment {
@@ -61,11 +62,14 @@ export interface ModelAssessment {
   caveats: string[];
 }
 
+export type RuntimeBackend = 'auto' | 'metal' | 'cuda' | 'cpu';
+
 export interface GenerationRequest {
   quality: QualityPreset;
   sourceName: string;
   sourceSizeBytes: number;
-  backend: 'auto' | 'metal' | 'cpu';
+  sourceBytes?: number[];
+  backend: RuntimeBackend;
   backgroundRemoval: boolean;
 }
 
@@ -89,6 +93,10 @@ export interface GenerationResult {
   triangles: number;
   textured: boolean;
   metadata: Record<string, string | number | boolean>;
+  assetBase64?: string;
+  assetMime?: string;
+  assetFilename?: string;
+  warning?: string;
 }
 
 export interface ModelAdapter {
@@ -98,4 +106,30 @@ export interface ModelAdapter {
     onProgress: (event: ProgressEvent) => void,
     signal: AbortSignal,
   ): Promise<GenerationResult>;
+}
+
+export type ModelRuntimeStatus = 'not-installed' | 'installing' | 'ready' | 'broken' | 'unavailable';
+
+export interface ModelRuntimeState {
+  modelId: string;
+  status: ModelRuntimeStatus;
+  installed: boolean;
+  verified: boolean;
+  runtimeReady: boolean;
+  canGenerate: boolean;
+  detail: string;
+  installedBytes: number;
+  sourceRevision: string;
+  weightSha256: string;
+  pythonVersion: string | null;
+}
+
+export interface ModelInstallProgress {
+  modelId: string;
+  stage: string;
+  stageProgress: number;
+  overallProgress: number;
+  message: string;
+  bytesDownloaded: number | null;
+  bytesTotal: number | null;
 }

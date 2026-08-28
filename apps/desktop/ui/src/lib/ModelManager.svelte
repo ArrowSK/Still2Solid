@@ -2,15 +2,30 @@
   import { onMount } from 'svelte';
   import { modelCandidates } from './modelCatalog';
   import { recommendedProductionModel } from './recommendation';
-  import type { HardwareProfile, ModelAssessment } from './types';
+  import {
+    getModelRuntimeStates,
+    installModel,
+    listenForInstallProgress,
+    uninstallModel,
+  } from './runtime';
+  import type {
+    HardwareProfile,
+    ModelAssessment,
+    ModelInstallProgress,
+    ModelRuntimeState,
+  } from './types';
 
   export let open = false;
   export let hardware: HardwareProfile;
   export let assessments: ModelAssessment[] = [];
   export let preferredModelId = '';
+  export let runtimeStates: ModelRuntimeState[] = [];
 
   const STORAGE_KEY = 'still2solid.preferredProductionModel';
   const productionCandidates = modelCandidates.filter((candidate) => candidate.manifest.id !== 'mock3d');
+  let installProgress: ModelInstallProgress | null = null;
+  let busyModelId = '';
+  let managerError = '';
 
   $: automaticRecommendation = recommendedProductionModel(assessments);
 
@@ -18,8 +33,16 @@
     return assessments.find((assessment) => assessment.modelId === modelId);
   }
 
-  function canPrefer(assessment: ModelAssessment | undefined): boolean {
-    return !!assessment && ['recommended', 'compatible', 'slow'].includes(assessment.compatibility);
+  function runtimeFor(modelId: string): ModelRuntimeState | undefined {
+    return runtimeStates.find((runtime) => runtime.modelId === modelId);
+  }
+
+  function canInstall(assessment: ModelAssessment | undefined): boolean {
+    return !!assessment && ['recommended', 'compatible', 'slow', 'memory-constrained'].includes(assessment.compatibility);
+  }
+
+  function canUse(assessment: ModelAssessment | undefined, runtime: ModelRuntimeState | undefined): boolean {
+    return !!assessment && !!runtime?.canGenerate && assessment.compatibility !== 'unsupported';
   }
 
   function prefer(modelId: string) {
@@ -36,25 +59,75 @@
     return assessment?.compatibility ?? 'unsupported';
   }
 
+  function replaceRuntime(next: ModelRuntimeState) {
+    runtimeStates = [...runtimeStates.filter((runtime) => runtime.modelId !== next.modelId), next];
+  }
+
+  function formatBytes(bytes: number): string {
+    if (!bytes) return '—';
+    return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+  }
+
+  async function install(candidateId: string, experimental: boolean) {
+    managerError = '';
+    busyModelId = candidateId;
+    installProgress = null;
+    try {
+      const state = await installModel(candidateId);
+      replaceRuntime(state);
+      if (state.canGenerate && (experimental || preferredModelId === candidateId)) prefer(candidateId);
+    } catch (caught) {
+      managerError = caught instanceof Error ? caught.message : String(caught);
+      runtimeStates = await getModelRuntimeStates();
+    } finally {
+      busyModelId = '';
+      installProgress = null;
+    }
+  }
+
+  async function uninstall(candidateId: string) {
+    managerError = '';
+    busyModelId = candidateId;
+    try {
+      const state = await uninstallModel(candidateId);
+      replaceRuntime(state);
+      if (preferredModelId === candidateId) clearPreference();
+    } catch (caught) {
+      managerError = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      busyModelId = '';
+    }
+  }
+
   onMount(() => {
+    let stopInstallListener: (() => void) | undefined;
+    void getModelRuntimeStates().then((states) => (runtimeStates = states));
+    void listenForInstallProgress((progress) => {
+      installProgress = progress;
+      busyModelId = progress.modelId;
+    }).then((unlisten) => (stopInstallListener = unlisten));
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (open && event.key === 'Escape') open = false;
+      if (open && event.key === 'Escape' && !busyModelId) open = false;
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      stopInstallListener?.();
+      window.removeEventListener('keydown', onKeyDown);
+    };
   });
 </script>
 
 {#if open}
   <div class="model-manager-layer">
-    <button class="backdrop" aria-label="Close Model Manager" type="button" on:click={() => (open = false)}></button>
+    <button class="backdrop" aria-label="Close Model Manager" type="button" disabled={!!busyModelId} on:click={() => (open = false)}></button>
     <section class="model-manager" role="dialog" aria-modal="true" aria-labelledby="model-manager-title">
       <header>
         <div>
-          <span class="eyebrow">M2 · HARDWARE-AWARE</span>
+          <span class="eyebrow">M3 · PRODUCTION RUNTIME</span>
           <h2 id="model-manager-title">Model Manager</h2>
         </div>
-        <button class="secondary close" type="button" on:click={() => (open = false)}>Close</button>
+        <button class="secondary close" type="button" disabled={!!busyModelId} on:click={() => (open = false)}>Close</button>
       </header>
 
       <div class="hardware-card">
@@ -78,25 +151,32 @@
         <div class="recommendation-summary">
           <span>Automatic recommendation</span>
           <strong>{modelCandidates.find((candidate) => candidate.manifest.id === automaticRecommendation?.modelId)?.manifest.name}</strong>
-          <small>Selected from permissively licensed candidates that clear the current hardware policy.</small>
+          <small>Automatic use still requires that the corresponding M3 runtime is installed and verified.</small>
         </div>
       {:else}
         <div class="recommendation-summary caution">
           <span>Automatic recommendation</span>
           <strong>No production model clears the safe threshold</strong>
-          <small>Mock3D remains available. The manager does not hide memory or platform constraints.</small>
+          <small>A memory-constrained TripoSR install is still available as an explicit experimental choice.</small>
         </div>
+      {/if}
+
+      {#if managerError}
+        <div class="manager-error" role="status">{managerError}</div>
       {/if}
 
       <div class="candidate-list">
         {#each productionCandidates as candidate}
           {@const assessment = assessmentFor(candidate.manifest.id)}
+          {@const runtime = runtimeFor(candidate.manifest.id)}
+          {@const isBusy = busyModelId === candidate.manifest.id}
           <article class="candidate-card">
             <div class="candidate-heading">
               <div>
                 <div class="name-row">
                   <h3>{candidate.manifest.name}</h3>
-                  {#if preferredModelId === candidate.manifest.id}<span class="preferred">Preferred</span>{/if}
+                  {#if preferredModelId === candidate.manifest.id}<span class="preferred">In use</span>{/if}
+                  {#if runtime?.verified}<span class="verified">Verified install</span>{/if}
                 </div>
                 <p>{candidate.summary}</p>
               </div>
@@ -107,6 +187,7 @@
               <span><strong>{(candidate.manifest.diskSizeMb / 1024).toFixed(1)} GB</strong> checkpoint</span>
               <span><strong>{candidate.manifest.license}</strong> licence</span>
               <span><strong>{candidate.manifest.supportsPbr ? 'PBR' : candidate.manifest.supportsTexture ? 'Textured' : 'Geometry'}</strong> output</span>
+              {#if runtime?.installed}<span><strong>{formatBytes(runtime.installedBytes)}</strong> installed</span>{/if}
             </div>
 
             <div class="source">{candidate.sourceLabel}</div>
@@ -118,27 +199,60 @@
                   {#each assessment.reasons as reason}<p>{reason}</p>{/each}
                   {#each assessment.caveats as caveat}<p class="caveat">{caveat}</p>{/each}
                   <p class="licence-note">{candidate.licenseNote}</p>
+                  {#if runtime}
+                    <p class="runtime-note"><strong>Runtime:</strong> {runtime.detail}</p>
+                    {#if runtime.pythonVersion}<p>Python {runtime.pythonVersion} · source {runtime.sourceRevision.slice(0, 8)} · checkpoint SHA-256 {runtime.weightSha256.slice(0, 12)}…</p>{/if}
+                  {/if}
                 </div>
               </details>
             {/if}
 
+            {#if isBusy && installProgress?.modelId === candidate.manifest.id}
+              <div class="install-progress" aria-live="polite">
+                <div><span>{installProgress.message}</span><strong>{Math.round(installProgress.overallProgress * 100)}%</strong></div>
+                <div class="install-bar"><div style={`width:${installProgress.overallProgress * 100}%`}></div></div>
+                {#if installProgress.bytesDownloaded && installProgress.bytesTotal}
+                  <small>{formatBytes(installProgress.bytesDownloaded)} / {formatBytes(installProgress.bytesTotal)}</small>
+                {/if}
+              </div>
+            {/if}
+
             <div class="candidate-actions">
-              {#if preferredModelId === candidate.manifest.id}
-                <button class="secondary" type="button" on:click={clearPreference}>Use automatic choice</button>
-              {:else}
-                <button class="secondary" type="button" disabled={!canPrefer(assessment)} on:click={() => prefer(candidate.manifest.id)}>
-                  Prefer for M3
-                </button>
-              {/if}
-              <span>{candidate.availability === 'gated' ? 'Gated upstream access' : 'Runtime adapter arrives in M3'}</span>
+              <div class="button-row">
+                {#if candidate.runtimeAdapter === 'triposr'}
+                  {#if runtime?.canGenerate}
+                    {#if preferredModelId === candidate.manifest.id}
+                      <button class="secondary" type="button" disabled={isBusy} on:click={clearPreference}>Use automatic choice</button>
+                    {:else}
+                      <button class="secondary" type="button" disabled={!canUse(assessment, runtime) || isBusy} on:click={() => prefer(candidate.manifest.id)}>Use for generation</button>
+                    {/if}
+                    <button class="secondary danger" type="button" disabled={isBusy} on:click={() => uninstall(candidate.manifest.id)}>Uninstall</button>
+                  {:else if runtime?.status === 'unavailable'}
+                    <button class="secondary" type="button" disabled>Desktop build required</button>
+                  {:else}
+                    <button
+                      class="secondary"
+                      type="button"
+                      disabled={!canInstall(assessment) || isBusy}
+                      on:click={() => install(candidate.manifest.id, assessment?.compatibility === 'memory-constrained')}
+                    >
+                      {runtime?.status === 'broken' ? 'Reinstall' : assessment?.compatibility === 'memory-constrained' ? 'Install experimental' : 'Install'}
+                    </button>
+                  {/if}
+                {:else}
+                  <button class="secondary" type="button" disabled>M3 adapter not implemented</button>
+                {/if}
+              </div>
+              <span>{candidate.runtimeAdapter === 'triposr' ? 'One-shot isolated worker · unloads after every generation' : 'Catalogue only'}</span>
             </div>
           </article>
         {/each}
       </div>
 
       <footer class="manager-footer">
-        <strong>M2 does not download or execute production model weights.</strong>
-        <span>It establishes the catalogue, hardware probe, compatibility policy and persistent production-model preference. Pinned downloads, checksums and isolated workers remain M3 work.</span>
+        <strong>M3 executes only the audited TripoSR adapter.</strong>
+        <span>The source revision and model checkpoint are pinned and verified before activation. Inference runs in a one-shot local Python process: no localhost server, cloud inference or persistent model process.</span>
+        <span>The development installer currently needs Python 3.11 or 3.12 to create its isolated environment. Bundling that interpreter belongs to release packaging rather than the model adapter itself.</span>
       </footer>
     </section>
   </div>
@@ -147,7 +261,7 @@
 <style>
   .model-manager-layer { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; }
   .backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(4, 6, 10, .76); backdrop-filter: blur(8px); }
-  .model-manager { position: relative; width: min(920px, 100%); max-height: calc(100vh - 48px); overflow: auto; border: 1px solid var(--border); border-radius: 22px; background: #13161c; box-shadow: 0 28px 90px rgba(0,0,0,.52); }
+  .model-manager { position: relative; width: min(940px, 100%); max-height: calc(100vh - 48px); overflow: auto; border: 1px solid var(--border); border-radius: 22px; background: #13161c; box-shadow: 0 28px 90px rgba(0,0,0,.52); }
   header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 1px solid var(--border); background: rgba(19,22,28,.96); backdrop-filter: blur(10px); }
   h2 { margin: 3px 0 0; font-size: 24px; }
   .close { padding: 8px 12px; }
@@ -159,13 +273,15 @@
   .recommendation-summary strong { color: var(--accent-strong); }
   .recommendation-summary.caution { border-color: #5b4b31; background: #211d16; }
   .recommendation-summary.caution strong { color: #e5c38a; }
+  .manager-error { margin: 12px 22px 0; padding: 12px 14px; border: 1px solid #68454a; border-radius: 12px; color: #ffc2c7; background: #281a1d; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
   .candidate-list { display: grid; gap: 12px; padding: 18px 22px 22px; }
   .candidate-card { padding: 17px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
   .candidate-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .candidate-heading h3 { margin: 0; font-size: 17px; }
   .candidate-heading p { max-width: 620px; margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
-  .name-row { display: flex; align-items: center; gap: 8px; }
-  .preferred { border: 1px solid #52669d; border-radius: 999px; padding: 2px 6px; color: var(--accent-strong); font-size: 10px; }
+  .name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .preferred, .verified { border: 1px solid #52669d; border-radius: 999px; padding: 2px 6px; color: var(--accent-strong); font-size: 10px; }
+  .verified { border-color: #466b59; color: #b8dfca; }
   .status { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 999px; padding: 5px 8px; color: var(--muted); font-size: 11px; }
   .status.recommended { border-color: #5573c9; color: #cbd7ff; background: #202942; }
   .status.compatible { border-color: #496d5c; color: #bfe3d0; background: #18271f; }
@@ -180,9 +296,16 @@
   .details-body p { margin: 0 0 7px; line-height: 1.4; }
   .details-body p:last-child { margin-bottom: 0; }
   .details-body .caveat { color: #e1c793; }
-  .licence-note { color: var(--muted); }
+  .licence-note, .runtime-note { color: var(--muted); }
+  .install-progress { display: grid; gap: 6px; margin-top: 14px; }
+  .install-progress > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+  .install-progress span, .install-progress small { color: var(--muted); }
+  .install-bar { height: 6px; overflow: hidden; border-radius: 99px; background: #2b3039; }
+  .install-bar div { height: 100%; background: var(--accent); transition: width .16s ease; }
   .candidate-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; }
+  .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
   .candidate-actions button { padding: 8px 11px; }
+  .danger { color: var(--danger); }
   .manager-footer { display: grid; gap: 5px; padding: 16px 22px 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; line-height: 1.45; }
   .manager-footer strong { color: var(--text); }
   @media (max-width: 680px) {
