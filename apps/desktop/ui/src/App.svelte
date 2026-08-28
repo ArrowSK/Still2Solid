@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import BackgroundAdvisor from './lib/BackgroundAdvisor.svelte';
   import ModelManager from './lib/ModelManager.svelte';
   import ModelViewer from './lib/ModelViewer.svelte';
   import { getHardwareProfile } from './lib/hardware';
@@ -378,6 +379,8 @@
           <small>{activeAdapter.manifest.id === 'triposr' ? 'Verified local install' : productionAssessment?.label ?? 'Inspect hardware constraints'}</small>
         </button>
 
+        <BackgroundAdvisor imageUrl={sourceUrl} bind:enabled={backgroundRemoval} disabled={generating} />
+
         <fieldset>
           <legend>Quality</legend>
           <div class="quality-grid">
@@ -403,7 +406,7 @@
                 <option value="cpu">CPU</option>
               </select>
             </label>
-            <label class="check"><input type="checkbox" bind:checked={backgroundRemoval} disabled={generating} /> Isolate foreground object</label>
+            <label class="check"><input type="checkbox" bind:checked={backgroundRemoval} disabled={generating} /> Foreground isolation (same setting as Background check)</label>
             <div class="diagnostic"><span>Detected</span><strong>{hardware.platform} · {hardware.architecture}</strong></div>
             <div class="diagnostic"><span>Memory</span><strong>{hardware.memoryGb ? `${hardware.memoryGb.toFixed(1)} GB` : 'Unavailable in browser preview'}</strong></div>
             <div class="diagnostic"><span>Preferred backend</span><strong>{hardware.preferredBackend}</strong></div>
