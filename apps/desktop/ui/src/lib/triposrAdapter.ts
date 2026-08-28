@@ -25,9 +25,10 @@ interface TripoResponse {
 
 const candidate = modelCandidateById('triposr');
 if (!candidate) throw new Error('TripoSR is missing from the model catalogue.');
+const triposrManifest = candidate.manifest;
 
 export class TripoSRAdapter implements ModelAdapter {
-  manifest = candidate.manifest;
+  manifest = triposrManifest;
 
   async generate(
     request: GenerationRequest,
