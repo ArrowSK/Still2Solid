@@ -85,6 +85,40 @@ export interface ProgressEvent {
   statusMessage: string;
 }
 
+export interface TimingContext {
+  hardwareKey: string;
+  modelId: string;
+  modelVersion: string;
+  quality: QualityPreset;
+  backend: RuntimeBackend;
+  backgroundRemoval: boolean;
+}
+
+export interface TimingStageSummary {
+  stageId: string;
+  medianSeconds: number;
+  meanSeconds: number;
+  sampleCount: number;
+}
+
+export interface TimingRunSummary {
+  completedAt: number;
+  totalSeconds: number;
+  resolvedBackend: string;
+  accepted: boolean;
+}
+
+export interface TimingProfileSummary {
+  key: string;
+  sampleCount: number;
+  confidence: 'low' | 'medium' | 'high';
+  medianTotalSeconds: number;
+  variability: number;
+  stages: TimingStageSummary[];
+  recentRuns: TimingRunSummary[];
+  updatedAt: number;
+}
+
 export interface GenerationResult {
   jobId: string;
   modelId: string;

@@ -7,6 +7,14 @@
   import { Mock3DAdapter } from './lib/mockAdapter';
   import { assessModels, recommendedProductionModel } from './lib/recommendation';
   import { getModelRuntimeStates } from './lib/runtime';
+  import {
+    clearTimingProfile,
+    createTimingContext,
+    estimateProgressFromTiming,
+    loadTimingProfile,
+    recordSuccessfulTiming,
+    timingContextKey,
+  } from './lib/timing';
   import { TripoSRAdapter } from './lib/triposrAdapter';
   import type {
     GenerationResult,
@@ -17,6 +25,8 @@
     ProgressEvent,
     QualityPreset,
     RuntimeBackend,
+    TimingContext,
+    TimingProfileSummary,
   } from './lib/types';
 
   const mockAdapter = new Mock3DAdapter();
@@ -61,6 +71,16 @@
   let runtimeStates: ModelRuntimeState[] = [];
   let activeAdapter: ModelAdapter = mockAdapter;
 
+  let timingRevision = 0;
+  let currentTimingContext: TimingContext;
+  let currentTimingKey = '';
+  let currentTimingProfile: TimingProfileSummary | null = null;
+  let jobTimingProfile: TimingProfileSummary | null = null;
+  let rawProgressTrace: ProgressEvent[] = [];
+  let progressReceivedAt = 0;
+  let clockNow = 0;
+  let clockTimer: ReturnType<typeof setInterval> | null = null;
+
   $: modelAssessments = assessModels(hardware);
   $: automaticRecommendation = recommendedProductionModel(modelAssessments);
   $: preferredAssessment = modelAssessments.find((item) => item.modelId === preferredProductionModelId);
@@ -73,6 +93,25 @@
   $: automaticTripo = !preferredProductionModelId && automaticRecommendation?.modelId === 'triposr';
   $: activeAdapter = triposrRuntime?.canGenerate && (explicitTripo || automaticTripo) ? triposrAdapter : mockAdapter;
 
+  $: currentTimingContext = createTimingContext(hardware, activeAdapter, quality, backend, backgroundRemoval);
+  $: currentTimingKey = timingContextKey(currentTimingContext);
+  $: {
+    timingRevision;
+    currentTimingKey;
+    currentTimingProfile = loadTimingProfile(currentTimingContext);
+  }
+  $: secondsSinceProgress = generating && progress && progressReceivedAt
+    ? Math.max(0, (clockNow - progressReceivedAt) / 1000)
+    : 0;
+  $: displayProgress = progress
+    ? estimateProgressFromTiming(
+        progress,
+        jobTimingProfile,
+        (jobAdapter ?? activeAdapter).manifest.stages.map((stage) => stage.id),
+        secondsSinceProgress,
+      )
+    : null;
+
   onMount(async () => {
     preferredProductionModelId = localStorage.getItem('still2solid.preferredProductionModel') ?? '';
     const [detectedHardware, detectedRuntimes] = await Promise.all([
@@ -81,10 +120,15 @@
     ]);
     hardware = detectedHardware;
     runtimeStates = detectedRuntimes;
+    clockNow = performance.now();
+    clockTimer = setInterval(() => {
+      if (generating) clockNow = performance.now();
+    }, 250);
   });
 
   onDestroy(() => {
     controller?.abort();
+    if (clockTimer) clearInterval(clockTimer);
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     if (previewModelUrl) URL.revokeObjectURL(previewModelUrl);
   });
@@ -154,7 +198,11 @@
     generating = true;
     controller = new AbortController();
     const adapterForJob = activeAdapter;
+    const contextForJob = createTimingContext(hardware, adapterForJob, quality, backend, backgroundRemoval);
     jobAdapter = adapterForJob;
+    jobTimingProfile = adapterForJob.manifest.id === 'triposr' ? loadTimingProfile(contextForJob) : null;
+    rawProgressTrace = [];
+    progressReceivedAt = 0;
 
     try {
       const isProduction = adapterForJob.manifest.id === 'triposr';
@@ -168,11 +216,29 @@
           backend,
           backgroundRemoval,
         },
-        (event) => (progress = event),
+        (event) => {
+          rawProgressTrace.push(event);
+          progress = event;
+          progressReceivedAt = performance.now();
+          clockNow = progressReceivedAt;
+        },
         controller.signal,
       );
       result = generated;
       decodeGeneratedAsset(generated);
+
+      if (generated.modelId === 'triposr') {
+        const resolvedBackend = typeof generated.metadata.backend === 'string'
+          ? generated.metadata.backend
+          : backend;
+        recordSuccessfulTiming(
+          contextForJob,
+          rawProgressTrace,
+          generated.elapsedSeconds,
+          String(resolvedBackend),
+        );
+        timingRevision += 1;
+      }
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') error = 'Generation cancelled.';
       else error = caught instanceof Error ? caught.message : String(caught || 'Generation failed.');
@@ -180,6 +246,7 @@
       generating = false;
       controller = null;
       jobAdapter = null;
+      jobTimingProfile = null;
     }
   }
 
@@ -194,6 +261,29 @@
     sourceUrl = '';
   }
 
+  function clearCurrentTiming() {
+    clearTimingProfile(currentTimingContext);
+    timingRevision += 1;
+  }
+
+  function formatSeconds(value: number): string {
+    if (value < 10) return `${value.toFixed(1)} s`;
+    return `${Math.round(value)} s`;
+  }
+
+  function formatRunTime(timestamp: number): string {
+    return new Date(timestamp).toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function stageLabel(stageId: string): string {
+    return activeAdapter.manifest.stages.find((stage) => stage.id === stageId)?.label ?? stageId;
+  }
+
   const stageState = (id: string) => {
     if (!progress) return 'pending';
     const adapterForStages = jobAdapter ?? activeAdapter;
@@ -205,7 +295,7 @@
   };
 </script>
 
-<svelte:head><title>Still2Solid · M3</title></svelte:head>
+<svelte:head><title>Still2Solid · M4</title></svelte:head>
 
 <header class="topbar">
   <div>
@@ -214,7 +304,7 @@
   </div>
   <div class="top-actions">
     <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>
-    <div class="milestone">M3 · Production TripoSR</div>
+    <div class="milestone">M4 · Learned ETA</div>
   </div>
 </header>
 
@@ -238,7 +328,7 @@
         {#if activeAdapter.manifest.id === 'triposr'}
           <span>Ready for local production inference</span>
           <strong>TripoSR</strong>
-          <small>Verified runtime installed · click to inspect</small>
+          <small>Verified runtime installed · timing improves automatically with successful runs</small>
         {:else if productionCandidate}
           <span>{preferredIsUsable ? 'Preferred production model' : 'Recommended for this computer'}</span>
           <strong>{productionCandidate.manifest.name}</strong>
@@ -263,7 +353,7 @@
       <div class="control-card">
         <div class="control-row">
           <div>
-            <label>Active adapter</label>
+            <span class="control-label">Active adapter</span>
             <strong>{activeAdapter.manifest.name} <span class="badge">{activeAdapter.manifest.id === 'triposr' ? 'Production adapter' : 'Development fallback'}</span></strong>
           </div>
           <details>
@@ -271,7 +361,7 @@
             <div class="explanation">
               {#if activeAdapter.manifest.id === 'triposr'}
                 <p><strong>TripoSR is installed, checksum-verified and selected.</strong> Each generation runs in a one-shot isolated local process and unloads when it finishes.</p>
-                <p>Source revision: 107cefdc. Checkpoint SHA-256: 429e2c6b22a0… No Hugging Face runtime downloads or localhost inference service are allowed.</p>
+                <p>M4 learns timing only from successful local runs for this exact hardware, model version, quality, backend choice and foreground-isolation setting.</p>
               {:else}
                 <p><strong>Mock3D is the safe fallback.</strong> A production adapter is used only after its runtime is installed, verified and selected.</p>
                 {#if triposrRuntime}<p>{triposrRuntime.detail}</p>{/if}
@@ -317,6 +407,49 @@
             <div class="diagnostic"><span>Memory</span><strong>{hardware.memoryGb ? `${hardware.memoryGb.toFixed(1)} GB` : 'Unavailable in browser preview'}</strong></div>
             <div class="diagnostic"><span>Preferred backend</span><strong>{hardware.preferredBackend}</strong></div>
             <div class="diagnostic"><span>Accelerator</span><strong>{hardware.accelerators[0]?.name ?? 'None detected'}</strong></div>
+
+            {#if activeAdapter.manifest.id === 'triposr'}
+              <section class="timing-card" aria-label="Local timing profile">
+                <div class="timing-heading">
+                  <div>
+                    <span>Local timing profile</span>
+                    {#if currentTimingProfile?.sampleCount}
+                      <strong>{currentTimingProfile.sampleCount} learned run{currentTimingProfile.sampleCount === 1 ? '' : 's'} · {currentTimingProfile.confidence} confidence</strong>
+                    {:else}
+                      <strong>Learning starts after the first successful run</strong>
+                    {/if}
+                  </div>
+                  {#if currentTimingProfile?.sampleCount}
+                    <button type="button" class="text-button" on:click={clearCurrentTiming} disabled={generating}>Reset</button>
+                  {/if}
+                </div>
+
+                {#if currentTimingProfile?.sampleCount}
+                  <div class="timing-summary">
+                    <span>Median total <strong>{formatSeconds(currentTimingProfile.medianTotalSeconds)}</strong></span>
+                    <span>Variation <strong>{Math.round(currentTimingProfile.variability * 100)}%</strong></span>
+                  </div>
+                  <div class="timing-stages">
+                    {#each currentTimingProfile.stages as stage}
+                      <div><span>{stageLabel(stage.stageId)}</span><strong>{formatSeconds(stage.medianSeconds)}</strong></div>
+                    {/each}
+                  </div>
+                  {#if currentTimingProfile.recentRuns.length}
+                    <div class="timing-history">
+                      <span class="timing-caption">Recent successful completions</span>
+                      {#each currentTimingProfile.recentRuns as run}
+                        <div>
+                          <span>{formatRunTime(run.completedAt)} · {run.resolvedBackend}</span>
+                          <strong class:excluded={!run.accepted}>{formatSeconds(run.totalSeconds)}{run.accepted ? '' : ' · excluded'}</strong>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                {:else}
+                  <p class="timing-empty">No cloud data or global benchmark is used. Still2Solid will learn only from completed generations on this hardware and this exact setting combination.</p>
+                {/if}
+              </section>
+            {/if}
           </div>
         {/if}
 
@@ -331,17 +464,28 @@
     <div class="message" role="status">{error}</div>
   {/if}
 
-  {#if generating && progress}
+  {#if generating && displayProgress}
     <section class="progress-card" aria-live="polite">
       <div class="progress-heading">
-        <div><span class="eyebrow">{jobAdapter?.manifest.id === 'triposr' ? 'LOCAL PRODUCTION GENERATION' : 'MOCK GENERATION'}</span><h2>{progress.stageName}</h2></div>
-        <strong>{Math.round(progress.overallProgress * 100)}%</strong>
+        <div><span class="eyebrow">{jobAdapter?.manifest.id === 'triposr' ? 'LOCAL PRODUCTION GENERATION' : 'MOCK GENERATION'}</span><h2>{displayProgress.stageName}</h2></div>
+        <strong>{Math.round(displayProgress.overallProgress * 100)}%</strong>
       </div>
-      <div class="bar"><div style={`width:${progress.overallProgress * 100}%`}></div></div>
+      <div class="bar"><div style={`width:${displayProgress.overallProgress * 100}%`}></div></div>
       <div class="eta">
-        <span>{progress.statusMessage}</span>
-        <span>{progress.etaSeconds > 0 ? `About ${Math.ceil(progress.etaSeconds)} s remaining` : jobAdapter?.manifest.id === 'triposr' ? 'Timing profile not learned yet' : 'Estimated development timing'}</span>
+        <span>{displayProgress.statusMessage}</span>
+        {#if displayProgress.etaSeconds > 0.5}
+          <span>About {Math.ceil(displayProgress.etaSeconds)} s remaining · {displayProgress.etaConfidence} confidence</span>
+        {:else if jobAdapter?.manifest.id === 'triposr' && jobTimingProfile?.sampleCount}
+          <span>Running beyond the learned median · {jobTimingProfile.confidence} confidence</span>
+        {:else if jobAdapter?.manifest.id === 'triposr'}
+          <span>Learning timing from this successful run</span>
+        {:else}
+          <span>Estimated development timing</span>
+        {/if}
       </div>
+      {#if jobAdapter?.manifest.id === 'triposr'}
+        <div class="estimate-note">{jobTimingProfile?.sampleCount ? `Learned locally from ${jobTimingProfile.sampleCount} comparable run${jobTimingProfile.sampleCount === 1 ? '' : 's'}.` : 'No prior comparable run exists yet; stage progress is shown without a learned ETA.'}</div>
+      {/if}
       <ol class="stages">
         {#each (jobAdapter ?? activeAdapter).manifest.stages as stage}
           <li class={stageState(stage.id)}><span>{stageState(stage.id) === 'done' ? '✓' : stageState(stage.id) === 'active' ? '●' : '○'}</span>{stage.label}</li>
@@ -365,9 +509,9 @@
       </div>
       {#if result.warning}<p class="result-warning">{result.warning}</p>{/if}
       {#if result.modelId === 'triposr'}
-        <p class="development-note">This is a real TripoSR result produced by the pinned, isolated M3 runtime. M5 will add the broader production asset/export pipeline; this milestone exports the generated GLB directly.</p>
+        <p class="development-note">This real TripoSR completion has been added to the local M4 timing history unless it was an extreme statistical outlier. Failed and cancelled generations are never used to train ETA estimates.</p>
       {:else}
-        <p class="development-note">This is the deterministic Mock3D fallback. Install and select TripoSR in Model Manager to enable production inference.</p>
+        <p class="development-note">This is the deterministic Mock3D fallback. Install and select TripoSR in Model Manager to enable production inference and learned local timing.</p>
       {/if}
     </section>
   {/if}
@@ -382,6 +526,6 @@
 />
 
 <footer>
-  <span>Still2Solid M3</span>
-  <span>Local-first · pinned TripoSR runtime · no telemetry · no inference server</span>
+  <span>Still2Solid M4</span>
+  <span>Local-first · learned ETA stays on this Mac · no telemetry · no inference server</span>
 </footer>
