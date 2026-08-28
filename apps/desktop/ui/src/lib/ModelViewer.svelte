@@ -15,14 +15,20 @@
   let controls: OrbitControls;
   let model: THREE.Mesh;
   let frame = 0;
+  let appliedTexture: THREE.Texture | null = null;
 
   function applyMaterial() {
     if (!model) return;
+
+    if (appliedTexture) {
+      appliedTexture.dispose();
+      appliedTexture = null;
+    }
+
     const current = model.material;
     if (Array.isArray(current)) current.forEach((material) => material.dispose());
     else current?.dispose();
 
-    const loader = new THREE.TextureLoader();
     const material = new THREE.MeshStandardMaterial({
       color: textureUrl ? 0xffffff : 0xb8bec9,
       roughness: 0.72,
@@ -31,7 +37,9 @@
     });
 
     if (textureUrl) {
+      const loader = new THREE.TextureLoader();
       loader.load(textureUrl, (texture) => {
+        appliedTexture = texture;
         texture.colorSpace = THREE.SRGBColorSpace;
         material.map = texture;
         material.needsUpdate = true;
@@ -41,9 +49,13 @@
     model.material = material;
   }
 
-  $: if (model) applyMaterial();
+  $: if (model) {
+    textureUrl;
+    wireframe;
+    applyMaterial();
+  }
 
-  async function exportGlb() {
+  function exportGlb() {
     if (!model) return;
     const exporter = new GLTFExporter();
     exporter.parse(
@@ -123,6 +135,7 @@
       controls.dispose();
       renderer.dispose();
       geometry.dispose();
+      appliedTexture?.dispose();
       if (model.material instanceof THREE.Material) model.material.dispose();
       renderer.domElement.remove();
     };
