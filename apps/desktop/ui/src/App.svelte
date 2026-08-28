@@ -296,7 +296,7 @@
   };
 </script>
 
-<svelte:head><title>Still2Solid · M5</title></svelte:head>
+<svelte:head><title>Still2Solid · M6</title></svelte:head>
 
 <header class="topbar">
   <div>
@@ -305,7 +305,7 @@
   </div>
   <div class="top-actions">
     <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>
-    <div class="milestone">M5 · Asset exports</div>
+    <div class="milestone">M6 · Print prep</div>
   </div>
 </header>
 
@@ -362,7 +362,7 @@
             <div class="explanation">
               {#if activeAdapter.manifest.id === 'triposr'}
                 <p><strong>TripoSR is installed, checksum-verified and selected.</strong> Each generation runs in a one-shot isolated local process and unloads when it finishes.</p>
-                <p>M4 timing remains local and M5 keeps each successful production GLB as the canonical master for preview and non-destructive exports.</p>
+                <p>M4 timing remains local, M5 keeps each production GLB as the canonical master, and M6 prepares a separate print copy without modifying that master.</p>
               {:else}
                 <p><strong>Mock3D is the safe fallback.</strong> A production adapter is used only after its runtime is installed, verified and selected.</p>
                 {#if triposrRuntime}<p>{triposrRuntime.detail}</p>{/if}
@@ -510,7 +510,7 @@
       </div>
       {#if result.warning}<p class="result-warning">{result.warning}</p>{/if}
       {#if result.modelId === 'triposr'}
-        <p class="development-note">M5 treats this validated production GLB as the canonical master. Use Export for the exact GLB, an OBJ + MTL + texture compatibility package, or geometry-only STL; M4 timing continues to learn only from successful local generations.</p>
+        <p class="development-note">The validated GLB remains the canonical master. Use Export for GLB/OBJ/raw STL, or Prepare for print to set millimetre size, inspect/repair topology and export 3MF or a prepared STL. M4 timing continues to learn only from successful local generations.</p>
       {:else}
         <p class="development-note">This is the deterministic Mock3D fallback. Install and select TripoSR in Model Manager to enable production inference, canonical production assets and learned local timing.</p>
       {/if}
@@ -527,6 +527,6 @@
 />
 
 <footer>
-  <span>Still2Solid M5</span>
-  <span>Local-first · canonical GLB + derived exports · learned ETA stays local · no telemetry</span>
+  <span>Still2Solid M6</span>
+  <span>Local-first · canonical GLB + print prep + 3MF · learned ETA stays local · no telemetry</span>
 </footer>
