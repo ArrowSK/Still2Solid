@@ -5,9 +5,12 @@ on:
   pull_request:
     paths:
       - '.github/workflows/macos-family-package.yml'
+  push:
+    branches:
+      - 'release/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-macos-apple-silicon:
@@ -80,3 +83,42 @@ jobs:
             src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.sha256.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub prerelease
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNED_BUILD: ${{ steps.apple-signing.outputs.available }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}-family-preview"
+          TITLE="Still2Solid v${VERSION} Family Preview"
+          DMG=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)
+          CHECKSUM="src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Still2Solid-macOS-Apple-Silicon.sha256.txt"
+
+          if [[ "$SIGNED_BUILD" == 'true' ]]; then
+            SECURITY_NOTE="This macOS build was produced with the configured Apple Developer signing identity."
+          else
+            SECURITY_NOTE="This family-preview macOS build is currently unsigned. macOS may require Open Anyway on first launch."
+          fi
+
+          cat > /tmp/release-notes.md <<EOF
+          Still2Solid is a local-first desktop app that turns a single image into a textured 3D asset.
+
+          This preview contains the user-friendly macOS Apple Silicon package for M1/M2/M3/M4 Macs. Install it normally by opening the DMG and dragging Still2Solid to Applications. Python is bundled; model weights are installed from inside the app.
+
+          ${SECURITY_NOTE}
+
+          Current validation status: application CI and packaging CI are green. The physical M1 8 GB performance benchmark is still a real-device validation step, so this build is published as a prerelease rather than a stable release.
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" "$CHECKSUM" --clobber
+          else
+            gh release create "$TAG" "$DMG" "$CHECKSUM" \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md \
+              --prerelease
+          fi
