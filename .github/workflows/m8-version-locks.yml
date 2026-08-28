@@ -1,0 +1,34 @@
+name: M8 refresh version lockfiles
+
+on:
+  push:
+    branches: [branding/app-logo]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branding/app-logo
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Refresh lockfiles
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+      - name: Commit refreshed locks and remove helper
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json src-tauri/Cargo.lock
+          git rm .github/workflows/m8-version-locks.yml
+          git commit -m "M8: refresh lockfiles for 0.8.0"
+          git push origin HEAD:branding/app-logo
