@@ -6,18 +6,32 @@
   import { modelCandidateById } from './lib/modelCatalog';
   import { Mock3DAdapter } from './lib/mockAdapter';
   import { assessModels, recommendedProductionModel } from './lib/recommendation';
-  import type { GenerationResult, HardwareProfile, ModelAssessment, ProgressEvent, QualityPreset } from './lib/types';
+  import { getModelRuntimeStates } from './lib/runtime';
+  import { TripoSRAdapter } from './lib/triposrAdapter';
+  import type {
+    GenerationResult,
+    HardwareProfile,
+    ModelAdapter,
+    ModelAssessment,
+    ModelRuntimeState,
+    ProgressEvent,
+    QualityPreset,
+    RuntimeBackend,
+  } from './lib/types';
 
-  const adapter = new Mock3DAdapter();
+  const mockAdapter = new Mock3DAdapter();
+  const triposrAdapter = new TripoSRAdapter();
   const qualities: Array<{ id: QualityPreset; title: string; detail: string }> = [
-    { id: 'fast', title: 'Fast', detail: 'Lower-density development mesh' },
-    { id: 'standard', title: 'Standard', detail: 'Balanced development preset' },
-    { id: 'best', title: 'Best', detail: 'Highest-density development mesh' },
+    { id: 'fast', title: 'Fast', detail: 'Lowest memory pressure and quickest mesh' },
+    { id: 'standard', title: 'Standard', detail: 'Balanced geometry and texture detail' },
+    { id: 'best', title: 'Best', detail: 'Higher-detail extraction and texture' },
   ];
 
   let quality: QualityPreset = 'standard';
   let sourceFile: File | null = null;
   let sourceUrl = '';
+  let previewModelUrl = '';
+  let previewFilename = 'still2solid.glb';
   let hardware: HardwareProfile = {
     platform: 'Detecting…',
     architecture: '—',
@@ -34,8 +48,9 @@
   let generating = false;
   let error = '';
   let controller: AbortController | null = null;
+  let jobAdapter: ModelAdapter | null = null;
   let advanced = false;
-  let backend: 'auto' | 'metal' | 'cpu' = 'auto';
+  let backend: RuntimeBackend = 'auto';
   let backgroundRemoval = true;
   let wireframe = false;
   let showGrid = true;
@@ -43,23 +58,42 @@
   let modelManagerOpen = false;
   let preferredProductionModelId = '';
   let modelAssessments: ModelAssessment[] = [];
+  let runtimeStates: ModelRuntimeState[] = [];
+  let activeAdapter: ModelAdapter = mockAdapter;
 
   $: modelAssessments = assessModels(hardware);
   $: automaticRecommendation = recommendedProductionModel(modelAssessments);
   $: preferredAssessment = modelAssessments.find((item) => item.modelId === preferredProductionModelId);
-  $: preferredIsUsable = preferredAssessment && ['recommended', 'compatible', 'slow'].includes(preferredAssessment.compatibility);
+  $: preferredIsUsable = preferredAssessment && preferredAssessment.compatibility !== 'unsupported';
   $: productionAssessment = preferredIsUsable ? preferredAssessment : automaticRecommendation;
   $: productionCandidate = productionAssessment ? modelCandidateById(productionAssessment.modelId) : undefined;
+  $: triposrRuntime = runtimeStates.find((runtime) => runtime.modelId === 'triposr');
+  $: triposrAssessment = modelAssessments.find((assessment) => assessment.modelId === 'triposr');
+  $: explicitTripo = preferredProductionModelId === 'triposr' && triposrAssessment?.compatibility !== 'unsupported';
+  $: automaticTripo = !preferredProductionModelId && automaticRecommendation?.modelId === 'triposr';
+  $: activeAdapter = triposrRuntime?.canGenerate && (explicitTripo || automaticTripo) ? triposrAdapter : mockAdapter;
 
   onMount(async () => {
     preferredProductionModelId = localStorage.getItem('still2solid.preferredProductionModel') ?? '';
-    hardware = await getHardwareProfile();
+    const [detectedHardware, detectedRuntimes] = await Promise.all([
+      getHardwareProfile(),
+      getModelRuntimeStates(),
+    ]);
+    hardware = detectedHardware;
+    runtimeStates = detectedRuntimes;
   });
 
   onDestroy(() => {
     controller?.abort();
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    if (previewModelUrl) URL.revokeObjectURL(previewModelUrl);
   });
+
+  function clearPreviewModel() {
+    if (previewModelUrl) URL.revokeObjectURL(previewModelUrl);
+    previewModelUrl = '';
+    previewFilename = 'still2solid.glb';
+  }
 
   function selectFile(file: File | undefined) {
     if (!file) return;
@@ -71,6 +105,7 @@
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     sourceFile = file;
     sourceUrl = URL.createObjectURL(file);
+    clearPreviewModel();
     result = null;
     progress = null;
   }
@@ -80,32 +115,71 @@
     selectFile(event.dataTransfer?.files?.[0]);
   }
 
+  function decodeGeneratedAsset(generated: GenerationResult) {
+    clearPreviewModel();
+    if (!generated.assetBase64) return;
+    const binary = atob(generated.assetBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    const blob = new Blob([bytes], { type: generated.assetMime ?? 'model/gltf-binary' });
+    previewModelUrl = URL.createObjectURL(blob);
+    previewFilename = generated.assetFilename ?? 'still2solid.glb';
+  }
+
+  async function prepareProductionImage(): Promise<number[]> {
+    if (!sourceFile || !sourceUrl) return [];
+    const image = new Image();
+    image.src = sourceUrl;
+    await image.decode();
+    const maxDimension = 2048;
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d', { alpha: true });
+    if (!context) throw new Error('Could not prepare the source image for local inference.');
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((value) => value ? resolve(value) : reject(new Error('Could not normalize the source image.')), 'image/png');
+    });
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  }
+
   async function generate() {
     if (!sourceFile || generating) return;
     error = '';
     result = null;
     progress = null;
+    clearPreviewModel();
     generating = true;
     controller = new AbortController();
+    const adapterForJob = activeAdapter;
+    jobAdapter = adapterForJob;
 
     try {
-      result = await adapter.generate(
+      const isProduction = adapterForJob.manifest.id === 'triposr';
+      const sourceBytes = isProduction ? await prepareProductionImage() : undefined;
+      const generated = await adapterForJob.generate(
         {
           quality,
-          sourceName: sourceFile.name,
+          sourceName: isProduction ? 'input.png' : sourceFile.name,
           sourceSizeBytes: sourceFile.size,
+          sourceBytes,
           backend,
           backgroundRemoval,
         },
         (event) => (progress = event),
         controller.signal,
       );
+      result = generated;
+      decodeGeneratedAsset(generated);
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') error = 'Generation cancelled.';
-      else error = caught instanceof Error ? caught.message : 'Generation failed.';
+      else error = caught instanceof Error ? caught.message : String(caught || 'Generation failed.');
     } finally {
       generating = false;
       controller = null;
+      jobAdapter = null;
     }
   }
 
@@ -115,21 +189,23 @@
     result = null;
     progress = null;
     error = '';
+    clearPreviewModel();
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     sourceUrl = '';
   }
 
   const stageState = (id: string) => {
     if (!progress) return 'pending';
-    const activeIndex = adapter.manifest.stages.findIndex((stage) => stage.id === progress?.stageId);
-    const index = adapter.manifest.stages.findIndex((stage) => stage.id === id);
+    const adapterForStages = jobAdapter ?? activeAdapter;
+    const activeIndex = adapterForStages.manifest.stages.findIndex((stage) => stage.id === progress?.stageId);
+    const index = adapterForStages.manifest.stages.findIndex((stage) => stage.id === id);
     if (index < activeIndex) return 'done';
     if (index === activeIndex) return progress.stageProgress >= 1 ? 'done' : 'active';
     return 'pending';
   };
 </script>
 
-<svelte:head><title>Still2Solid · M2</title></svelte:head>
+<svelte:head><title>Still2Solid · M3</title></svelte:head>
 
 <header class="topbar">
   <div>
@@ -138,7 +214,7 @@
   </div>
   <div class="top-actions">
     <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>
-    <div class="milestone">M2 · Model intelligence</div>
+    <div class="milestone">M3 · Production TripoSR</div>
   </div>
 </header>
 
@@ -159,14 +235,18 @@
       <button type="button" class="primary">Choose image…</button>
       <input bind:this={fileInput} class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" on:change={(event) => selectFile(event.currentTarget.files?.[0])} />
       <button type="button" class="model-hint" on:click|stopPropagation={() => (modelManagerOpen = true)}>
-        {#if productionCandidate}
+        {#if activeAdapter.manifest.id === 'triposr'}
+          <span>Ready for local production inference</span>
+          <strong>TripoSR</strong>
+          <small>Verified runtime installed · click to inspect</small>
+        {:else if productionCandidate}
           <span>{preferredIsUsable ? 'Preferred production model' : 'Recommended for this computer'}</span>
           <strong>{productionCandidate.manifest.name}</strong>
-          <small>{productionAssessment?.label} · inspect in Model Manager</small>
+          <small>{triposrRuntime?.installed ? 'Runtime not selected or not ready' : 'Open Model Manager to install a runtime'}</small>
         {:else}
           <span>Production model</span>
-          <strong>No safe automatic recommendation yet</strong>
-          <small>Open Model Manager for the hardware assessment</small>
+          <strong>Mock3D fallback is active</strong>
+          <small>Open Model Manager for the hardware assessment and experimental install option</small>
         {/if}
       </button>
     </section>
@@ -184,27 +264,27 @@
         <div class="control-row">
           <div>
             <label>Active adapter</label>
-            <strong>{adapter.manifest.name} <span class="badge">Development adapter</span></strong>
+            <strong>{activeAdapter.manifest.name} <span class="badge">{activeAdapter.manifest.id === 'triposr' ? 'Production adapter' : 'Development fallback'}</span></strong>
           </div>
           <details>
             <summary>Why this model?</summary>
             <div class="explanation">
-              <p><strong>Mock3D remains the active inference adapter in M2.</strong> M2 adds model discovery and hardware-aware recommendation without pretending that a production worker already exists.</p>
-              {#if productionCandidate && productionAssessment}
-                <p><strong>{productionCandidate.manifest.name}</strong> is currently {preferredIsUsable ? 'your preferred M3 candidate' : 'the automatic production recommendation'} for this hardware. Status: {productionAssessment.label}.</p>
-                <p>{productionAssessment.reasons[0]}</p>
+              {#if activeAdapter.manifest.id === 'triposr'}
+                <p><strong>TripoSR is installed, checksum-verified and selected.</strong> Each generation runs in a one-shot isolated local process and unloads when it finishes.</p>
+                <p>Source revision: 107cefdc. Checkpoint SHA-256: 429e2c6b22a0… No Hugging Face runtime downloads or localhost inference service are allowed.</p>
               {:else}
-                <p>No production candidate currently clears the safe automatic threshold on the detected hardware.</p>
+                <p><strong>Mock3D is the safe fallback.</strong> A production adapter is used only after its runtime is installed, verified and selected.</p>
+                {#if triposrRuntime}<p>{triposrRuntime.detail}</p>{/if}
               {/if}
-              <p>Open Model Manager for the full hardware and licence rationale.</p>
+              <p>Open Model Manager for hardware, licence and installation details.</p>
             </div>
           </details>
         </div>
 
         <button type="button" class="recommendation-strip" on:click={() => (modelManagerOpen = true)}>
-          <span>{preferredIsUsable ? 'Preferred for M3' : 'Production recommendation'}</span>
-          <strong>{productionCandidate?.manifest.name ?? 'No safe recommendation'}</strong>
-          <small>{productionAssessment?.label ?? 'Inspect hardware constraints'}</small>
+          <span>{activeAdapter.manifest.id === 'triposr' ? 'Production runtime' : preferredIsUsable ? 'Preferred candidate' : 'Production recommendation'}</span>
+          <strong>{activeAdapter.manifest.id === 'triposr' ? 'TripoSR · ready' : productionCandidate?.manifest.name ?? 'No safe recommendation'}</strong>
+          <small>{activeAdapter.manifest.id === 'triposr' ? 'Verified local install' : productionAssessment?.label ?? 'Inspect hardware constraints'}</small>
         </button>
 
         <fieldset>
@@ -228,6 +308,7 @@
               <select bind:value={backend} disabled={generating}>
                 <option value="auto">Auto</option>
                 <option value="metal">Metal / MPS</option>
+                <option value="cuda">CUDA</option>
                 <option value="cpu">CPU</option>
               </select>
             </label>
@@ -240,7 +321,7 @@
         {/if}
 
         <button type="button" class="primary generate" on:click={generate} disabled={generating || !sourceFile}>
-          {generating ? 'Generating…' : 'Generate 3D'}
+          {generating ? 'Generating…' : activeAdapter.manifest.id === 'triposr' ? 'Generate 3D locally' : 'Generate Mock3D'}
         </button>
       </div>
     </section>
@@ -253,13 +334,16 @@
   {#if generating && progress}
     <section class="progress-card" aria-live="polite">
       <div class="progress-heading">
-        <div><span class="eyebrow">MOCK GENERATION</span><h2>{progress.stageName}</h2></div>
+        <div><span class="eyebrow">{jobAdapter?.manifest.id === 'triposr' ? 'LOCAL PRODUCTION GENERATION' : 'MOCK GENERATION'}</span><h2>{progress.stageName}</h2></div>
         <strong>{Math.round(progress.overallProgress * 100)}%</strong>
       </div>
       <div class="bar"><div style={`width:${progress.overallProgress * 100}%`}></div></div>
-      <div class="eta"><span>Estimated progress</span><span>About {Math.ceil(progress.etaSeconds)} s remaining</span></div>
+      <div class="eta">
+        <span>{progress.statusMessage}</span>
+        <span>{progress.etaSeconds > 0 ? `About ${Math.ceil(progress.etaSeconds)} s remaining` : jobAdapter?.manifest.id === 'triposr' ? 'Timing profile not learned yet' : 'Estimated development timing'}</span>
+      </div>
       <ol class="stages">
-        {#each adapter.manifest.stages as stage}
+        {#each (jobAdapter ?? activeAdapter).manifest.stages as stage}
           <li class={stageState(stage.id)}><span>{stageState(stage.id) === 'done' ? '✓' : stageState(stage.id) === 'active' ? '●' : '○'}</span>{stage.label}</li>
         {/each}
       </ol>
@@ -271,15 +355,20 @@
     <section class="result-section">
       <div class="result-heading">
         <div><span class="eyebrow">GENERATED LOCALLY</span><h2>Preview</h2></div>
-        <div class="result-stats"><span>{result.elapsedSeconds.toFixed(1)} s</span><span>Textured</span><span>{result.triangles.toLocaleString()} triangles</span></div>
+        <div class="result-stats"><span>{result.elapsedSeconds.toFixed(1)} s</span><span>{result.textured ? 'Textured' : 'Vertex colour'}</span><span>{result.triangles.toLocaleString()} triangles</span></div>
       </div>
-      <ModelViewer textureUrl={sourceUrl} {wireframe} {showGrid} />
+      <ModelViewer textureUrl={sourceUrl} modelUrl={previewModelUrl} exportFilename={previewFilename} {wireframe} {showGrid} />
       <div class="viewer-options">
         <label class="check"><input type="checkbox" bind:checked={wireframe} /> Wireframe</label>
         <label class="check"><input type="checkbox" bind:checked={showGrid} /> Grid</label>
         <button type="button" class="secondary" on:click={generate}>Regenerate</button>
       </div>
-      <p class="development-note">This is still the deterministic Mock3D result. M2 selects and explains production candidates, but production model downloads and isolated inference workers are intentionally deferred to M3.</p>
+      {#if result.warning}<p class="result-warning">{result.warning}</p>{/if}
+      {#if result.modelId === 'triposr'}
+        <p class="development-note">This is a real TripoSR result produced by the pinned, isolated M3 runtime. M5 will add the broader production asset/export pipeline; this milestone exports the generated GLB directly.</p>
+      {:else}
+        <p class="development-note">This is the deterministic Mock3D fallback. Install and select TripoSR in Model Manager to enable production inference.</p>
+      {/if}
     </section>
   {/if}
 </main>
@@ -287,11 +376,12 @@
 <ModelManager
   bind:open={modelManagerOpen}
   bind:preferredModelId={preferredProductionModelId}
+  bind:runtimeStates
   {hardware}
   assessments={modelAssessments}
 />
 
 <footer>
-  <span>Still2Solid M2</span>
-  <span>Local-first · hardware-aware model catalogue · no telemetry</span>
+  <span>Still2Solid M3</span>
+  <span>Local-first · pinned TripoSR runtime · no telemetry · no inference server</span>
 </footer>
