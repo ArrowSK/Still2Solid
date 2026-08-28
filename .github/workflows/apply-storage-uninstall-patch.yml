@@ -29,125 +29,73 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          def required(path, old, new, count=1):
-              p = Path(path)
-              text = p.read_text()
-              found = text.count(old)
-              if found < count:
-                  raise SystemExit(f"{path}: expected at least {count} occurrence(s), found {found}: {old[:80]!r}")
-              p.write_text(text.replace(old, new, count))
-
-          def replace_all(path, old, new):
+          def rep(path, old, new):
               p = Path(path)
               text = p.read_text()
               if old not in text:
-                  raise SystemExit(f"{path}: missing {old!r}")
-              p.write_text(text.replace(old, new))
+                  raise SystemExit(f"{path}: expected anchor missing: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
 
-          required(
-              'apps/desktop/ui/src/App.svelte',
+          rep('apps/desktop/ui/src/App.svelte',
               "  import ModelManager from './lib/ModelManagerM8.svelte';\n  import ModelViewer from './lib/ModelViewer.svelte';",
-              "  import ModelManager from './lib/ModelManagerM8.svelte';\n  import SettingsPanel from './lib/SettingsPanel.svelte';\n  import ModelViewer from './lib/ModelViewer.svelte';",
-          )
-          required(
-              'apps/desktop/ui/src/App.svelte',
+              "  import ModelManager from './lib/ModelManagerM8.svelte';\n  import SettingsPanel from './lib/SettingsPanel.svelte';\n  import ModelViewer from './lib/ModelViewer.svelte';")
+          rep('apps/desktop/ui/src/App.svelte',
               "  let modelManagerOpen = false;\n  let preferredProductionModelId = '';",
-              "  let modelManagerOpen = false;\n  let settingsOpen = false;\n  let preferredProductionModelId = '';",
-          )
-          required(
-              'apps/desktop/ui/src/App.svelte',
-              '<svelte:head><title>Still2Solid · M8</title></svelte:head>',
-              '<svelte:head><title>Still2Solid</title></svelte:head>',
-          )
-          required(
-              'apps/desktop/ui/src/App.svelte',
+              "  let modelManagerOpen = false;\n  let settingsOpen = false;\n  let preferredProductionModelId = '';")
+          rep('apps/desktop/ui/src/App.svelte', '<svelte:head><title>Still2Solid · M8</title></svelte:head>', '<svelte:head><title>Still2Solid</title></svelte:head>')
+          rep('apps/desktop/ui/src/App.svelte',
               '  <div class="top-actions">\n    <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>\n    <div class="milestone">M8 · Multi-model local</div>\n  </div>',
-              '  <div class="top-actions">\n    <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>\n    <button type="button" class="secondary model-manager-button" on:click={() => (settingsOpen = true)}>Settings</button>\n    <div class="milestone">v0.8.1</div>\n  </div>',
-          )
-          required(
-              'apps/desktop/ui/src/App.svelte',
+              '  <div class="top-actions">\n    <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>\n    <button type="button" class="secondary model-manager-button" on:click={() => (settingsOpen = true)}>Settings</button>\n    <div class="milestone">v0.8.1</div>\n  </div>')
+          rep('apps/desktop/ui/src/App.svelte',
               '<ModelManager\n  bind:open={modelManagerOpen}\n  bind:preferredModelId={preferredProductionModelId}\n  bind:runtimeStates\n  {hardware}\n  assessments={modelAssessments}\n/>\n\n<footer>\n  <span>Still2Solid M8</span>',
-              '<ModelManager\n  bind:open={modelManagerOpen}\n  bind:preferredModelId={preferredProductionModelId}\n  bind:runtimeStates\n  {hardware}\n  assessments={modelAssessments}\n/>\n\n<SettingsPanel\n  bind:open={settingsOpen}\n  bind:preferredModelId={preferredProductionModelId}\n  bind:runtimeStates\n  platform={hardware.platform}\n  disabled={generating}\n/>\n\n<footer>\n  <span>Still2Solid v0.8.1</span>',
-          )
+              '<ModelManager\n  bind:open={modelManagerOpen}\n  bind:preferredModelId={preferredProductionModelId}\n  bind:runtimeStates\n  {hardware}\n  assessments={modelAssessments}\n/>\n\n<SettingsPanel\n  bind:open={settingsOpen}\n  bind:preferredModelId={preferredProductionModelId}\n  bind:runtimeStates\n  platform={hardware.platform}\n  disabled={generating}\n/>\n\n<footer>\n  <span>Still2Solid v0.8.1</span>')
 
-          replace_all('apps/desktop/ui/src/lib/ModelManagerM8.svelte', 'M8 · LOCAL MODEL RUNTIMES', 'LOCAL MODEL RUNTIMES')
-          replace_all('apps/desktop/ui/src/lib/ModelManagerM8.svelte', 'M8 includes two audited production adapters:', 'Still2Solid includes two audited production adapters:')
+          rep('apps/desktop/ui/src/lib/ModelManagerM8.svelte', 'M8 · LOCAL MODEL RUNTIMES', 'LOCAL MODEL RUNTIMES')
+          rep('apps/desktop/ui/src/lib/ModelManagerM8.svelte', 'M8 includes two audited production adapters:', 'Still2Solid includes two audited production adapters:')
+          rep('package.json', '"version": "0.8.0"', '"version": "0.8.1"')
+          rep('src-tauri/Cargo.toml', 'version = "0.8.0"', 'version = "0.8.1"')
+          rep('src-tauri/tauri.conf.json', '"version": "0.8.0"', '"version": "0.8.1"')
 
-          required('package.json', '"version": "0.8.0"', '"version": "0.8.1"')
-          required('src-tauri/Cargo.toml', 'version = "0.8.0"', 'version = "0.8.1"')
-          required('src-tauri/tauri.conf.json', '"version": "0.8.0"', '"version": "0.8.1"')
-
-          readme = Path('README.md')
-          text = readme.read_text().replace('0.8.0', '0.8.1')
-          old = '- Hardware-aware Model Manager and conservative compatibility policy.\n'
-          new = old + '- Settings → Storage with model removal, cache cleanup and a complete-uninstall preparation flow.\n'
-          if old not in text:
-              raise SystemExit('README feature anchor missing')
-          text = text.replace(old, new, 1)
+          p = Path('README.md')
+          text = p.read_text().replace('0.8.0', '0.8.1')
+          anchor = '- Hardware-aware Model Manager and conservative compatibility policy.\n'
+          if anchor not in text: raise SystemExit('README feature anchor missing')
+          text = text.replace(anchor, anchor + '- Settings → Storage with model removal, cache cleanup and a complete-uninstall preparation flow.\n', 1)
           old = 'To uninstall, quit Still2Solid and move it from **Applications** to **Trash**. If you want to reclaim the space used by downloaded models, uninstall those from the Model Manager first.'
-          new = ('For a normal app-only uninstall, quit Still2Solid and move it from **Applications** to **Trash**. '
-                 'Downloaded models are intentionally kept so reinstalling the app does not force multi-gigabyte downloads. '
-                 'For a complete uninstall, open **Settings → Storage → Prepare for uninstall** first. Still2Solid removes its downloaded models, app data, cache and local preferences; then quit the app and move it to Trash.')
-          if old not in text:
-              raise SystemExit('README uninstall anchor missing')
-          readme.write_text(text.replace(old, new, 1))
+          new = ('For a normal app-only uninstall, quit Still2Solid and move it from **Applications** to **Trash**. Downloaded models are intentionally kept so reinstalling the app does not force multi-gigabyte downloads. For a complete uninstall, open **Settings → Storage → Prepare for uninstall** first. Still2Solid removes its downloaded models, app data, cache and local preferences; then quit the app and move it to Trash.')
+          if old not in text: raise SystemExit('README uninstall anchor missing')
+          p.write_text(text.replace(old, new, 1))
 
-          guide = Path('docs/USER_GUIDE.md')
-          text = guide.read_text()
+          p = Path('docs/USER_GUIDE.md')
+          text = p.read_text()
           anchor = '## Limits worth remembering\n'
-          section = '''## 11. Storage and uninstall\n\nOpen **Settings → Storage** to see how much local space Still2Solid is using. The panel separates downloaded model runtimes, cache and other application data.\n\nYou can use three cleanup actions:\n\n- **Remove downloaded models** removes installed TripoSR and Stable Fast 3D runtimes/weights while keeping the application. Reinstall them later from **Models**.\n- **Clear cache** removes temporary Still2Solid cache without touching model installations or exported files.\n- **Prepare for uninstall** performs the complete local cleanup: installed model runtimes, Still2Solid app data, cache and local `still2solid.*` preferences/timing data are removed. Exported GLB/OBJ/STL/3MF files saved elsewhere are never deleted.\n\nmacOS does not call an application when it is dragged to Trash, so Still2Solid cannot run this cleanup automatically after deletion. For a complete uninstall, run **Prepare for uninstall** first, wait for **Cleanup complete**, quit Still2Solid, then move the application from **Applications** to **Trash**. On macOS the panel can open the Applications folder for the final step.\n\nReplacing or updating the `.app` does **not** remove downloaded models. This is intentional so normal updates do not force large model downloads again.\n\n'''
-          if anchor not in text:
-              raise SystemExit('USER_GUIDE limits anchor missing')
+          section = '''## 11. Storage and uninstall\n\nOpen **Settings → Storage** to see how much local space Still2Solid is using. The panel separates downloaded model runtimes, cache and other application data.\n\n- **Remove downloaded models** removes installed TripoSR and Stable Fast 3D runtimes/weights while keeping the application. Reinstall them later from **Models**.\n- **Clear cache** removes temporary Still2Solid cache without touching model installations or exported files.\n- **Prepare for uninstall** removes installed model runtimes, Still2Solid app data, cache and local `still2solid.*` preferences/timing data. Exported GLB/OBJ/STL/3MF files saved elsewhere are never deleted.\n\nmacOS does not call an application when it is dragged to Trash, so Still2Solid cannot run this cleanup automatically after deletion. For a complete uninstall, run **Prepare for uninstall** first, wait for **Cleanup complete**, quit Still2Solid, then move the application from **Applications** to **Trash**. On macOS the panel can open the Applications folder for the final step.\n\nReplacing or updating the `.app` does **not** remove downloaded models. This is intentional so normal updates do not force large model downloads again.\n\n'''
+          if anchor not in text: raise SystemExit('USER_GUIDE anchor missing')
           text = text.replace(anchor, section + anchor, 1)
-          text = text.replace(
-              'Still2Solid cannot recover information a single image never contained. It also does not yet promise a signed installer, a completely bundled Python runtime, or safe automatic TripoSR recommendation on 8 GB Apple Silicon. Those are explicit open release/validation items rather than hidden caveats.',
-              'Still2Solid cannot recover information a single image never contained. Packaged builds include the pinned Python runtime, while the current macOS download remains unsigned and may require one-time Gatekeeper approval. Safe automatic TripoSR recommendation on 8 GB Apple Silicon remains dependent on real-device measurement.'
-          )
-          guide.write_text(text)
+          text = text.replace('Still2Solid cannot recover information a single image never contained. It also does not yet promise a signed installer, a completely bundled Python runtime, or safe automatic TripoSR recommendation on 8 GB Apple Silicon. Those are explicit open release/validation items rather than hidden caveats.', 'Still2Solid cannot recover information a single image never contained. Packaged builds include the pinned Python runtime, while the current macOS download remains unsigned and may require one-time Gatekeeper approval. Safe automatic TripoSR recommendation on 8 GB Apple Silicon remains dependent on real-device measurement.')
+          p.write_text(text)
 
-          getting = Path('docs/GETTING_STARTED.md')
-          text = getting.read_text()
-          text = text.replace(
-              'A public installer should still be treated as a release only after the release workflow has produced and validated the intended platform artifact and, where applicable, signing/notarization has completed.\n\nIf you only want to understand the workflow, read the [User Guide](USER_GUIDE.md).',
-              'The current Apple Silicon macOS release is published through GitHub Releases. It carries its own pinned Python runtime; model weights are installed from inside the app. The current macOS build is unsigned, so first launch may require **System Settings → Privacy & Security → Open Anyway**.\n\nIf you only want to understand the workflow, read the [User Guide](USER_GUIDE.md).\n\n## Installing the macOS release\n\n1. Open the repository **Releases** page and download the current Apple Silicon DMG.\n2. Open the DMG and drag **Still2Solid** to **Applications**.\n3. Launch Still2Solid normally. If Gatekeeper blocks the unsigned build, approve it once in **Privacy & Security**.\n4. Install or remove production models from **Models**.\n5. Use **Settings → Storage** for disk usage, model cleanup, cache cleanup and complete-uninstall preparation.\n\nA normal app update/replacement keeps downloaded models. For a complete uninstall, use **Settings → Storage → Prepare for uninstall** before moving Still2Solid to Trash.'
-          )
-          getting.write_text(text)
+          p = Path('docs/GETTING_STARTED.md')
+          text = p.read_text()
+          old = 'A public installer should still be treated as a release only after the release workflow has produced and validated the intended platform artifact and, where applicable, signing/notarization has completed.\n\nIf you only want to understand the workflow, read the [User Guide](USER_GUIDE.md).'
+          new = '''The current Apple Silicon macOS release is published through GitHub Releases. It carries its own pinned Python runtime; model weights are installed from inside the app. The current macOS build is unsigned, so first launch may require **System Settings → Privacy & Security → Open Anyway**.\n\nIf you only want to understand the workflow, read the [User Guide](USER_GUIDE.md).\n\n## Installing the macOS release\n\n1. Open the repository **Releases** page and download the current Apple Silicon DMG.\n2. Open the DMG and drag **Still2Solid** to **Applications**.\n3. Launch Still2Solid normally. If Gatekeeper blocks the unsigned build, approve it once in **Privacy & Security**.\n4. Install or remove production models from **Models**.\n5. Use **Settings → Storage** for disk usage, model cleanup, cache cleanup and complete-uninstall preparation.\n\nA normal app update/replacement keeps downloaded models. For a complete uninstall, use **Settings → Storage → Prepare for uninstall** before moving Still2Solid to Trash.'''
+          if old not in text: raise SystemExit('GETTING_STARTED anchor missing')
+          p.write_text(text.replace(old, new, 1))
 
-          security = Path('docs/SECURITY_PRIVACY.md')
-          text = security.read_text()
+          p = Path('docs/SECURITY_PRIVACY.md')
+          text = p.read_text()
           anchor = '## Content Security Policy\n'
-          section = '''## Storage cleanup and uninstall privacy\n\nDownloaded production models live in Still2Solid's application-data area rather than inside the signed application bundle. This keeps updates/reinstalls separate from multi-gigabyte model downloads.\n\n**Settings → Storage** exposes only app-scoped cleanup operations. The Rust side resolves Tauri application data/cache/config/local-data roots, validates that cleanup targets are Still2Solid-owned paths, and refuses unexpected paths before recursive deletion. The UI does not receive generic filesystem deletion capability.\n\n**Prepare for uninstall** first invokes the existing model uninstall paths, then removes Still2Solid-owned app data/cache and local `still2solid.*` preferences. User-exported model files saved outside Still2Solid's application-data directories are not part of cleanup.\n\n'''
-          if anchor not in text:
-              raise SystemExit('SECURITY_PRIVACY CSP anchor missing')
-          security.write_text(text.replace(anchor, section + anchor, 1))
+          section = '''## Storage cleanup and uninstall privacy\n\nDownloaded production models live in Still2Solid's application-data area rather than inside the application bundle. This keeps updates/reinstalls separate from multi-gigabyte model downloads.\n\n**Settings → Storage** exposes only app-scoped cleanup operations. The Rust side resolves Tauri application data/cache/config/local-data roots, validates that cleanup targets are Still2Solid-owned paths, and refuses unexpected paths before recursive deletion. The UI does not receive generic filesystem deletion capability.\n\n**Prepare for uninstall** first invokes the existing model uninstall paths, then removes Still2Solid-owned app data/cache and local `still2solid.*` preferences. User-exported model files saved outside Still2Solid's application-data directories are not part of cleanup.\n\n'''
+          if anchor not in text: raise SystemExit('SECURITY_PRIVACY anchor missing')
+          p.write_text(text.replace(anchor, section + anchor, 1))
 
-          roadmap = Path('docs/ROADMAP.md')
-          text = roadmap.read_text()
+          p = Path('docs/ROADMAP.md')
+          text = p.read_text()
           anchor = '- an audited second production adapter for gated Stable Fast 3D.\n'
-          if anchor not in text:
-              raise SystemExit('ROADMAP feature anchor missing')
+          if anchor not in text: raise SystemExit('ROADMAP anchor missing')
           text = text.replace(anchor, anchor + '- in-app storage accounting, model/cache cleanup and complete-uninstall preparation.\n', 1)
-          text = text.replace(
-              'The remaining items are validation/operations rather than missing M1–M8 feature code: physical low-memory Apple-Silicon benchmarking and actually producing signed/notarized public artifacts with configured release credentials.',
-              'The remaining items are validation/operations rather than missing M1–M8 feature code: physical low-memory Apple-Silicon benchmarking and Apple Developer signing/notarization for the published macOS distribution.'
-          )
-          roadmap.write_text(text)
-
-          workflow = Path('.github/workflows/macos-package.yml')
-          text = workflow.read_text()
-          anchor = '          This release includes the macOS Apple Silicon package for M1/M2/M3/M4 Macs. Install it by opening the DMG and dragging Still2Solid to Applications. Python is bundled; production model weights are installed from inside the app when requested.\n\n'
-          addition = anchor + '          Settings → Storage can remove downloaded models, clear cache, or prepare a complete uninstall before the app is moved to Trash. Normal upgrades keep downloaded models.\n\n'
-          if anchor not in text:
-              raise SystemExit('macos-package release notes anchor missing')
-          workflow.write_text(text.replace(anchor, addition, 1))
-
-          release = Path('.github/workflows/release.yml')
-          text = release.read_text()
-          old = '            Still2Solid desktop release. Model weights are installed separately in-app and are not embedded in the application package.'
-          new = '            Still2Solid desktop release. Model weights are installed separately in-app and are not embedded in the application package. Settings → Storage provides model/cache cleanup and complete-uninstall preparation.'
-          if old not in text:
-              raise SystemExit('release.yml body anchor missing')
-          release.write_text(text.replace(old, new, 1))
+          text = text.replace('The remaining items are validation/operations rather than missing M1–M8 feature code: physical low-memory Apple-Silicon benchmarking and actually producing signed/notarized public artifacts with configured release credentials.', 'The remaining items are validation/operations rather than missing M1–M8 feature code: physical low-memory Apple-Silicon benchmarking and Apple Developer signing/notarization for the published macOS distribution.')
+          p.write_text(text)
           PY
 
       - name: Install Tauri Linux prerequisites
@@ -172,8 +120,8 @@ jobs:
       - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+ArrowSK@users.noreply.github.com"
-          git add apps/desktop/ui/src/App.svelte apps/desktop/ui/src/lib/ModelManagerM8.svelte package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json README.md docs/USER_GUIDE.md docs/GETTING_STARTED.md docs/SECURITY_PRIVACY.md docs/ROADMAP.md .github/workflows/macos-package.yml .github/workflows/release.yml
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/ui/src/App.svelte apps/desktop/ui/src/lib/ModelManagerM8.svelte package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json README.md docs/USER_GUIDE.md docs/GETTING_STARTED.md docs/SECURITY_PRIVACY.md docs/ROADMAP.md
           if git diff --cached --quiet; then
             echo "No patch changes to commit"
           else
