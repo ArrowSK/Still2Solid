@@ -1,0 +1,275 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { getModelRuntimeStates, uninstallModel, uninstallSf3d } from './runtime';
+  import {
+    clearAppCache,
+    clearAppOwnedData,
+    getStorageSummary,
+    openApplicationsFolder,
+    type StorageSummary,
+  } from './storage';
+  import type { ModelRuntimeState } from './types';
+
+  export let open = false;
+  export let platform = '';
+  export let disabled = false;
+  export let runtimeStates: ModelRuntimeState[] = [];
+  export let preferredModelId = '';
+
+  let summary: StorageSummary | null = null;
+  let busy = false;
+  let error = '';
+  let message = '';
+  let confirmUninstall = false;
+  let prepared = false;
+  let observedOpen = false;
+
+  $: if (open && !observedOpen) {
+    observedOpen = true;
+    void refresh();
+  }
+  $: if (!open && observedOpen) {
+    observedOpen = false;
+    confirmUninstall = false;
+    prepared = false;
+    error = '';
+    message = '';
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes <= 0) return '0 MB';
+    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+    if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  function clearStill2SolidPreferences() {
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith('still2solid.')) localStorage.removeItem(key);
+    }
+  }
+
+  async function refresh() {
+    summary = await getStorageSummary();
+  }
+
+  async function removeInstalledModels() {
+    const installed = runtimeStates.filter((runtime) => runtime.installed);
+    for (const runtime of installed) {
+      if (runtime.modelId === 'sf3d') await uninstallSf3d();
+      else await uninstallModel(runtime.modelId);
+    }
+    runtimeStates = await getModelRuntimeStates();
+    preferredModelId = '';
+    localStorage.removeItem('still2solid.preferredProductionModel');
+  }
+
+  async function removeModels() {
+    if (busy || disabled) return;
+    busy = true;
+    error = '';
+    message = '';
+    try {
+      await removeInstalledModels();
+      await refresh();
+      message = 'Downloaded model runtimes were removed. You can reinstall them later from Models.';
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+      runtimeStates = await getModelRuntimeStates();
+      await refresh();
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function clearCache() {
+    if (busy || disabled) return;
+    busy = true;
+    error = '';
+    message = '';
+    try {
+      summary = await clearAppCache();
+      message = 'Still2Solid cache was cleared.';
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+      await refresh();
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function prepareForUninstall() {
+    if (busy || disabled) return;
+    busy = true;
+    error = '';
+    message = '';
+    try {
+      await removeInstalledModels();
+      summary = await clearAppOwnedData();
+      clearStill2SolidPreferences();
+      preferredModelId = '';
+      runtimeStates = await getModelRuntimeStates();
+      summary = await getStorageSummary();
+      confirmUninstall = false;
+      prepared = true;
+      message = 'Cleanup complete. You can now quit Still2Solid and move it from Applications to Trash.';
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+      runtimeStates = await getModelRuntimeStates();
+      await refresh();
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function openApplications() {
+    error = '';
+    try {
+      await openApplicationsFolder();
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+    }
+  }
+
+  onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (open && event.key === 'Escape' && !busy) open = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+</script>
+
+{#if open}
+  <div class="settings-layer">
+    <button class="backdrop" aria-label="Close Settings" type="button" disabled={busy} on:click={() => (open = false)}></button>
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <header>
+        <div>
+          <span class="eyebrow">SETTINGS</span>
+          <h2 id="settings-title">Storage</h2>
+        </div>
+        <button class="secondary close" type="button" disabled={busy} on:click={() => (open = false)}>Close</button>
+      </header>
+
+      <div class="content">
+        <section class="storage-card">
+          <div class="storage-heading">
+            <div>
+              <span>Local storage used by Still2Solid</span>
+              <strong>{summary?.nativeAvailable ? formatBytes(summary.totalRemovableBytes) : 'Desktop build required'}</strong>
+            </div>
+            <button class="secondary compact" type="button" disabled={busy} on:click={refresh}>Refresh</button>
+          </div>
+
+          {#if summary?.nativeAvailable}
+            <div class="storage-grid">
+              <div><span>Downloaded models</span><strong>{formatBytes(summary.modelsBytes)}</strong><small>{summary.installedModelDirectories} local model {summary.installedModelDirectories === 1 ? 'directory' : 'directories'}</small></div>
+              <div><span>Cache</span><strong>{formatBytes(summary.cacheBytes)}</strong><small>Temporary app files</small></div>
+              <div><span>Other app data</span><strong>{formatBytes(summary.otherAppDataBytes)}</strong><small>Local Still2Solid data outside model storage</small></div>
+            </div>
+          {:else}
+            <p class="muted">Storage management is available in the installed Tauri desktop application, not the browser-only development preview.</p>
+          {/if}
+        </section>
+
+        {#if error}<div class="notice error" role="alert">{error}</div>{/if}
+        {#if message}<div class="notice success" role="status">{message}</div>{/if}
+        {#if disabled}<div class="notice caution">Finish or cancel the active generation before changing local storage.</div>{/if}
+
+        <section class="action-card">
+          <div>
+            <h3>Downloaded models</h3>
+            <p>Remove TripoSR and Stable Fast 3D runtimes and weights without removing the Still2Solid application. Models can be installed again later.</p>
+          </div>
+          <button class="secondary" type="button" disabled={busy || disabled || !summary?.nativeAvailable || !summary?.modelsBytes} on:click={removeModels}>
+            {busy ? 'Working…' : 'Remove downloaded models'}
+          </button>
+        </section>
+
+        <section class="action-card">
+          <div>
+            <h3>Cache</h3>
+            <p>Clear temporary Still2Solid cache without touching installed models or your exported 3D files.</p>
+          </div>
+          <button class="secondary" type="button" disabled={busy || disabled || !summary?.nativeAvailable || !summary?.cacheBytes} on:click={clearCache}>
+            Clear cache
+          </button>
+        </section>
+
+        <section class="uninstall-card">
+          <div>
+            <span class="eyebrow">COMPLETE UNINSTALL</span>
+            <h3>Prepare Still2Solid for uninstall</h3>
+            <p>This removes downloaded models, Still2Solid app data, cache and local Still2Solid preferences. It does not delete exported GLB, OBJ, STL or 3MF files that you saved elsewhere.</p>
+            <p>The application itself stays in Applications because macOS does not provide apps with an uninstall callback when they are moved to Trash.</p>
+          </div>
+
+          {#if !confirmUninstall}
+            <button class="danger" type="button" disabled={busy || disabled || !summary?.nativeAvailable} on:click={() => (confirmUninstall = true)}>
+              Prepare for uninstall…
+            </button>
+          {:else}
+            <div class="confirm-box">
+              <strong>Remove Still2Solid's local data?</strong>
+              <span>Downloaded models may use several gigabytes. This cleanup cannot be undone, although models can be downloaded again later.</span>
+              <div class="button-row">
+                <button class="secondary" type="button" disabled={busy} on:click={() => (confirmUninstall = false)}>Cancel</button>
+                <button class="danger" type="button" disabled={busy || disabled} on:click={prepareForUninstall}>{busy ? 'Removing…' : 'Remove local data'}</button>
+              </div>
+            </div>
+          {/if}
+
+          {#if prepared && platform === 'macos'}
+            <button class="primary" type="button" on:click={openApplications}>Open Applications folder</button>
+          {/if}
+        </section>
+      </div>
+    </section>
+  </div>
+{/if}
+
+<style>
+  .settings-layer { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center; padding: 24px; }
+  .backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(4,6,10,.76); backdrop-filter: blur(8px); }
+  .settings-panel { position: relative; width: min(760px,100%); max-height: calc(100vh - 48px); overflow: auto; border: 1px solid var(--border); border-radius: 22px; background: #13161c; box-shadow: 0 28px 90px rgba(0,0,0,.52); }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 1px solid var(--border); background: rgba(19,22,28,.96); backdrop-filter: blur(10px); }
+  h2 { margin: 3px 0 0; font-size: 24px; }
+  h3 { margin: 0 0 7px; font-size: 16px; }
+  p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
+  .eyebrow { color: var(--muted); font-size: 11px; letter-spacing: .12em; font-weight: 700; }
+  .content { display: grid; gap: 12px; padding: 20px 22px 24px; }
+  .storage-card, .action-card, .uninstall-card { border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 17px; }
+  .storage-heading, .action-card { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+  .storage-heading > div { display: grid; gap: 5px; }
+  .storage-heading span, .storage-grid span, .storage-grid small { color: var(--muted); font-size: 12px; }
+  .storage-heading strong { font-size: 22px; }
+  .storage-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 15px; }
+  .storage-grid > div { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #101319; }
+  .storage-grid strong { font-size: 16px; }
+  .action-card > div { max-width: 520px; }
+  .uninstall-card { display: grid; gap: 14px; border-color: #5b3a3f; background: #1d1518; }
+  .uninstall-card > div:first-child { display: grid; gap: 7px; }
+  .confirm-box { display: grid; gap: 9px; padding: 13px; border: 1px solid #70464c; border-radius: 12px; background: #27191d; }
+  .confirm-box span { color: #d7b8bc; font-size: 12px; line-height: 1.5; }
+  .button-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 3px; }
+  button { border-radius: 10px; padding: 9px 13px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .secondary { border: 1px solid var(--border); background: #191d25; color: var(--text); }
+  .primary { border: 1px solid #4d8dff; background: #2f6fe4; color: white; justify-self: start; }
+  .danger { border: 1px solid #8b4d57; background: #3a2025; color: #ffd5d9; justify-self: start; }
+  .compact, .close { padding: 7px 10px; }
+  .notice { padding: 11px 13px; border-radius: 12px; font-size: 12px; line-height: 1.45; }
+  .notice.error { border: 1px solid #68454a; color: #ffc2c7; background: #281a1d; }
+  .notice.success { border: 1px solid #365f51; color: #bdebdc; background: #14231e; }
+  .notice.caution { border: 1px solid #5b4b31; color: #e5c38a; background: #211d16; }
+  .muted { margin-top: 12px; }
+  @media (max-width: 680px) {
+    .settings-layer { padding: 10px; }
+    .settings-panel { max-height: calc(100vh - 20px); }
+    .storage-grid { grid-template-columns: 1fr; }
+    .storage-heading, .action-card { align-items: stretch; flex-direction: column; }
+    .action-card button { align-self: start; }
+  }
+</style>
