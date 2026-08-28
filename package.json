@@ -1,0 +1,26 @@
+{
+  "name": "still2solid",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config apps/desktop/ui/vite.config.ts",
+    "build": "vite build --config apps/desktop/ui/vite.config.ts",
+    "check": "svelte-check --tsconfig apps/desktop/ui/tsconfig.json",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.8.0",
+    "three": "^0.179.1",
+    "svelte": "^5.38.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.1.0",
+    "@tauri-apps/cli": "^2.8.4",
+    "@types/three": "^0.179.0",
+    "svelte-check": "^4.3.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}
