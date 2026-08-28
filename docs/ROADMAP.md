@@ -1,21 +1,24 @@
 # Roadmap
 
-Still2Solid uses milestones as capability boundaries, not as marketing version names. A milestone is only “done” when the code, tests and user-facing behavior for that boundary exist. Hardware claims still require real hardware validation.
+Still2Solid uses milestones as capability boundaries. A milestone is complete when its code, tests and user-facing behavior exist; that does not convert unmeasured hardware claims or unsigned release artifacts into facts.
 
 ## Where the project is now
 
-The application has reached the end of M6 functionality:
+M1 through M8 are implemented in the repository:
 
-- a working desktop shell;
+- image-first desktop workflow and Mock3D fallback;
 - hardware-aware model policy;
-- a real local TripoSR production path;
-- learned local progress/ETA;
-- canonical GLB + derived exports;
+- verified local TripoSR production path;
+- learned local progress and ETA;
+- canonical GLB plus derived exports;
 - non-destructive print preparation and 3MF;
 - local background guidance;
-- project branding and a complete documentation set.
+- canonical branding in the repository, web UI and native package icons;
+- bundled, checksum-verified Python runtime preparation and active Tauri packaging;
+- cross-platform release workflow with macOS signing/notarization hooks;
+- an audited second production adapter for gated Stable Fast 3D.
 
-It is **not yet an end-user release** because the runtime packaging/signing/notarization work in M7 remains open.
+The remaining items are validation/operations rather than missing M1–M8 feature code: physical low-memory Apple-Silicon benchmarking and actually producing signed/notarized public artifacts with configured release credentials.
 
 ## Completed milestones
 
@@ -29,15 +32,7 @@ Added native hardware probing, curated model catalogue, deterministic compatibil
 
 ### M3 — Production TripoSR adapter
 
-Added the first real production model path:
-
-- pinned and verified install;
-- private Python environment;
-- one-shot worker;
-- foreground isolation;
-- backend choice;
-- production GLB generation;
-- safe Mock3D fallback.
+Added the first real production model path with immutable source/model revisions, integrity verification, private runtime environment, one-shot worker, foreground isolation, backend selection, canonical production GLB and safe Mock3D fallback.
 
 ### M4 — Learned progress and ETA
 
@@ -51,23 +46,47 @@ Established validated GLB 2.0 as the production master and added exact GLB, OBJ 
 
 Added explicit millimetre sizing, orientation, topology analysis, conservative repair, flat-base assistance, 3MF and prepared STL export.
 
-### 0.6.1 product polish
+### M7 — Release packaging infrastructure
 
-This is not a new architecture milestone. It closes important usability/repository-quality gaps after M6:
+Implemented the code-side release boundary:
 
-- final Still2Solid branding in the application/repository;
-- local Background check with a clear user-controlled foreground-isolation recommendation;
-- humane README and user/developer/troubleshooting/security/model/branding documentation;
-- release-state and roadmap wording that distinguishes implemented capability from unvalidated hardware claims.
+- pinned Python 3.12 standalone runtimes with per-platform SHA-256 verification;
+- Tauri resource bundling of that interpreter;
+- model installers that prefer the bundled interpreter in packaged builds;
+- reproducible npm and Cargo lockfiles;
+- active Tauri bundle configuration;
+- native macOS/Windows/Linux icon assets derived from the canonical Still2Solid mark;
+- release CI for Apple-Silicon macOS, Windows x64 and Linux x64;
+- macOS certificate/signing/notarization secret hooks;
+- draft GitHub release creation from version tags.
+
+This means the packaging implementation is complete. It does **not** claim that a signed public release has already been produced: that requires configured signing credentials and successful release runs on the supported platforms.
+
+### M8 — Additional production model
+
+Added Stable Fast 3D as an audited second production adapter without weakening the catalogue policy:
+
+- upstream source pinned to immutable GitHub commit `ff21fc491b4dc5314bf6734c7c0dabd86b5f5bb2`;
+- gated Hugging Face model pinned to immutable revision `f0c9a8ffd62cb1bbc8a7a53c9f87a0be1b6be778`;
+- model checkpoint SHA-256 verification before activation;
+- explicit Stability AI Community License acknowledgement in Model Manager;
+- Hugging Face access token supplied only to the installer process and not stored by Still2Solid;
+- DINO/support assets cached during installation for offline inference;
+- one-shot local SF3D worker with cancellation and cleanup;
+- canonical GLB result path shared with preview/export/print preparation;
+- local timing/ETA learning shared with other production adapters;
+- SF3D remains an explicit opt-in and is never selected automatically because its licence is conditional/gated.
+
+TRELLIS.2 remains catalogue-only because its upstream Linux/NVIDIA/VRAM requirements do not fit the primary product target. Models with incompatible regional licensing remain excluded.
 
 ## Open validation gate — M1 with 8 GB unified memory
 
-The product target includes low-memory Apple Silicon. The code supports an explicit TripoSR experimental-install path on 8 GB Apple Silicon, but the recommendation policy remains conservative until a real benchmark is run on the target machine.
+The product target includes low-memory Apple Silicon. The code exposes an explicit TripoSR experimental-install path on 8 GB Apple Silicon, but the recommendation policy remains conservative until a real benchmark is run on the target machine.
 
 Before changing 8 GB from **Memory constrained** to a normal recommendation, capture at least:
 
 - macOS version and exact hardware;
-- successful install/runtime verification;
+- successful packaged-runtime and model installation;
 - Fast, Standard and Best behavior where practical;
 - CPU vs MPS behavior;
 - peak memory/pressure observations;
@@ -77,80 +96,23 @@ Before changing 8 GB from **Memory constrained** to a normal recommendation, cap
 - representative simple and difficult images;
 - whether the 15–30 second product goal is realistic on that hardware.
 
-The result may be “supported but slower than the goal.” That is acceptable. The policy should reflect measurement rather than optimism.
+The result may be “supported but slower than the goal.” The policy should follow measurement rather than optimism.
 
-## M7 — Release packaging
+## Open operational release gate
 
-Goal: make Still2Solid installable by a normal user without asking them to build a Rust/Svelte app or prepare Python manually.
+Before publishing a build as a normal-user release:
 
-Planned scope:
+- run the release workflow for the intended tag;
+- configure and verify macOS signing/notarization credentials;
+- define/verify the Windows signing arrangement if signed Windows distribution is required;
+- install the produced artifacts on clean supported machines;
+- verify native icon/branding, bundled Python discovery, model installation, generation, cancellation, export and uninstall/reinstall behavior;
+- generate/review the final dependency/SBOM and third-party licence output from the release artifacts.
 
-- bundled/versioned production Python runtime;
-- reproducible runtime layout;
-- application bundle activation in Tauri;
-- correct platform icon assets;
-- macOS signing and notarization flow;
-- Windows signing strategy;
-- release CI/artifacts;
-- clean install/uninstall behavior;
-- app-data/runtime-data separation;
-- model/runtime upgrade path;
-- first-run error messages that do not require terminal knowledge;
-- documented rollback/recovery behavior;
-- release checks on at least the primary Apple Silicon target and one additional supported platform.
-
-M7 should not silently move inference to a cloud service to simplify packaging.
-
-## M8 — Additional models
-
-Goal: make the model architecture genuinely useful beyond the first adapter without turning Model Manager into an unsafe catalogue of everything available online.
-
-A model is eligible only after:
-
-- licence/region review;
-- hardware floor and backend review;
-- immutable source/model pin strategy;
-- checksum/verification strategy;
-- no arbitrary remote-code requirement;
-- output compatibility with the canonical asset layer;
-- cancellation/cleanup design;
-- CI-test strategy that does not require downloading the full model.
-
-Likely categories to explore:
-
-- a stronger high-memory workstation model;
-- a genuinely Apple-Silicon-friendly alternative if one is available under suitable terms;
-- optional specialized geometry/texturing models where they improve a clear product workflow.
-
-Conditional/gated models should remain explicit opt-ins rather than automatic defaults.
+These steps validate M7; they are not additional architecture milestones.
 
 ## Later product ideas — not committed milestones
 
-These ideas may make sense after M7/M8, but they are intentionally not presented as promised features:
+Possible post-M8 work includes batch queues, multi-view input where a model genuinely supports it, richer print/slicer hand-off, project history, automatic update UX, additional export/material workflows and opt-in privacy-preserving benchmark sharing.
 
-- batch image queue;
-- multi-view input where a model genuinely supports it;
-- richer print tools such as supports or slicer hand-off;
-- project/history library;
-- automatic update UI;
-- additional export/material workflows;
-- benchmark sharing that is opt-in and privacy-preserving.
-
-The core product should remain understandable: **image in, local 3D out**. New features should not bury that flow.
-
-## Definition of “production-ready” for this project
-
-Before calling the desktop application production-ready for ordinary users, Still2Solid should have:
-
-- a packaged runtime with no manual Python requirement;
-- signed/notarized release artifacts where the platform supports it;
-- verified application icons/branding in packaged builds;
-- a reproducible release workflow;
-- hardware validation for the machines the UI recommends automatically;
-- clean first-run installation and model installation;
-- clear failure recovery without terminal-only instructions;
-- green automated checks;
-- current third-party/licence documentation;
-- no regression in the local-first/security invariants.
-
-That is the M7 release bar.
+The product rule remains simple: **image in, local 3D out**. New features should not bury that flow.
