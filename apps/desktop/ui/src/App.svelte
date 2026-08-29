@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import BackgroundAdvisor from './lib/BackgroundAdvisor.svelte';
+  import FirstRunWizard from './lib/FirstRunWizard.svelte';
   import ModelManager from './lib/ModelManagerM8.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
   import ModelViewer from './lib/ModelViewer.svelte';
@@ -72,6 +73,7 @@
   let fileInput: HTMLInputElement;
   let modelManagerOpen = false;
   let settingsOpen = false;
+  let firstRunWizardOpen = false;
   let appVersion = 'development';
   let preferredProductionModelId = '';
   let modelAssessments: ModelAssessment[] = [];
@@ -133,6 +135,9 @@
     hardware = detectedHardware;
     runtimeStates = detectedRuntimes;
     appVersion = detectedVersion;
+    if (localStorage.getItem('still2solid.firstRunComplete') !== '1') {
+      firstRunWizardOpen = true;
+    }
     clockNow = performance.now();
     clockTimer = setInterval(() => {
       if (generating) clockNow = performance.now();
@@ -533,6 +538,15 @@
     </section>
   {/if}
 </main>
+
+<FirstRunWizard
+  bind:open={firstRunWizardOpen}
+  bind:preferredModelId={preferredProductionModelId}
+  bind:modelManagerOpen
+  {hardware}
+  assessments={modelAssessments}
+  {runtimeStates}
+/>
 
 <ModelManager
   bind:open={modelManagerOpen}

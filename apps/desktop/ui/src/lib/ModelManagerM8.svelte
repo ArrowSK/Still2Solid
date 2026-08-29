@@ -29,6 +29,8 @@
   let installProgress: ModelInstallProgress | null = null;
   let busyModelId = '';
   let managerError = '';
+  let failedModelId = '';
+  let alternateModelUrl = '';
   let sf3dToken = '';
   let sf3dLicenseAccepted = false;
 
@@ -73,19 +75,22 @@
     return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 ** 2).toFixed(0)} MB`;
   }
 
-  async function install(candidateId: string, experimental: boolean) {
+  async function install(candidateId: string, experimental: boolean, modelUrl = '') {
     managerError = '';
+    failedModelId = '';
     busyModelId = candidateId;
     installProgress = null;
     try {
       const state = candidateId === 'sf3d'
         ? await installSf3d(sf3dToken, sf3dLicenseAccepted)
-        : await installModel(candidateId);
+        : await installModel(candidateId, modelUrl || undefined);
       replaceRuntime(state);
+      alternateModelUrl = '';
       if (candidateId === 'sf3d') sf3dToken = '';
       if (state.canGenerate && (experimental || preferredModelId === candidateId)) prefer(candidateId);
     } catch (caught) {
       managerError = caught instanceof Error ? caught.message : String(caught);
+      failedModelId = candidateId;
       runtimeStates = await getModelRuntimeStates();
     } finally {
       busyModelId = '';
@@ -221,6 +226,20 @@
               </div>
             {/if}
 
+            {#if !isBusy && failedModelId === candidate.manifest.id && candidate.manifest.id === 'triposr'}
+              <div class="recovery-install">
+                <strong>Automatic install did not complete</strong>
+                <p>Still2Solid already retried transient failures and uses GitHub's pinned blob API if raw source delivery fails. You can retry the automatic route, or—only as a recovery option—paste a direct HTTPS link to the exact TripoSR <code>model.ckpt</code>. The file must still match Still2Solid's pinned SHA-256 or it will be deleted.</p>
+                <div class="recovery-actions">
+                  <button class="secondary" type="button" on:click={() => install(candidate.manifest.id, assessment?.compatibility === 'memory-constrained')}>Retry automatic install</button>
+                  <label>Alternate model link
+                    <input type="url" bind:value={alternateModelUrl} autocomplete="off" spellcheck="false" placeholder="https://…/model.ckpt" />
+                  </label>
+                  <button class="secondary" type="button" disabled={!alternateModelUrl.trim().startsWith('https://')} on:click={() => install(candidate.manifest.id, assessment?.compatibility === 'memory-constrained', alternateModelUrl)}>Retry with this verified link</button>
+                </div>
+              </div>
+            {/if}
+
             {#if isBusy && installProgress?.modelId === candidate.manifest.id}
               <div class="install-progress" aria-live="polite">
                 <div><span>{installProgress.message}</span><strong>{Math.round(installProgress.overallProgress * 100)}%</strong></div>
@@ -284,6 +303,12 @@
   .recommendation-summary.caution { border-color: #5b4b31; background: #211d16; }
   .recommendation-summary.caution strong { color: #e5c38a; }
   .manager-error { margin: 12px 22px 0; padding: 12px 14px; border: 1px solid #68454a; border-radius: 12px; color: #ffc2c7; background: #281a1d; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+  .recovery-install { display: grid; gap: 10px; margin-top: 13px; padding: 13px; border: 1px solid #6a5634; border-radius: 12px; background: #211d16; }
+  .recovery-install p { margin: 0; color: #d5c39f; font-size: 12px; line-height: 1.5; }
+  .recovery-install code { color: #f0d9aa; }
+  .recovery-actions { display: grid; grid-template-columns: auto minmax(160px,1fr) auto; align-items: end; gap: 9px; }
+  .recovery-actions label { display: grid; gap: 5px; color: var(--muted); font-size: 11px; }
+  .recovery-actions input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border); border-radius: 9px; background: #101319; color: var(--text); padding: 9px 10px; font: inherit; font-size: 12px; }
   .candidate-list { display: grid; gap: 12px; padding: 18px 22px 22px; }
   .candidate-card { padding: 17px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
   .candidate-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
@@ -320,5 +345,5 @@
   .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
   .manager-footer { display: grid; gap: 6px; padding: 16px 22px 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; line-height: 1.5; }
   .manager-footer strong { color: var(--text); }
-  @media (max-width: 700px) { .model-manager-layer { padding: 8px; } .model-manager { max-height: calc(100vh - 16px); } .hardware-card { grid-template-columns: 1fr; } .hardware-backend { text-align: left; } .candidate-heading, .candidate-actions { align-items: stretch; flex-direction: column; } }
+  @media (max-width: 700px) { .recovery-actions { grid-template-columns: 1fr; align-items: stretch; } .model-manager-layer { padding: 8px; } .model-manager { max-height: calc(100vh - 16px); } .hardware-card { grid-template-columns: 1fr; } .hardware-backend { text-align: left; } .candidate-heading, .candidate-actions { align-items: stretch; flex-direction: column; } }
 </style>
