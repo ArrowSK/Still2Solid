@@ -9,6 +9,7 @@ use tauri::{AppHandle, Manager};
 pub struct StorageSummary {
     models_bytes: u64,
     cache_bytes: u64,
+    temporary_bytes: u64,
     other_app_data_bytes: u64,
     total_removable_bytes: u64,
     installed_model_directories: u64,
@@ -68,6 +69,16 @@ fn validate_owned_root(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_owned_child(parent: &Path, child: &Path) -> Result<(), String> {
+    if child == parent || !child.starts_with(parent) {
+        return Err(format!(
+            "Still2Solid refused to remove an unexpected temporary path: {}",
+            child.display()
+        ));
+    }
+    Ok(())
+}
+
 fn remove_path(path: &Path) -> Result<(), String> {
     if !path.exists() {
         return Ok(());
@@ -79,13 +90,58 @@ fn remove_path(path: &Path) -> Result<(), String> {
     }
 }
 
+fn abandoned_paths(app: &AppHandle) -> Result<Vec<PathBuf>, String> {
+    let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let mut paths = vec![app_data.join("jobs")];
+    let models = app_data.join("models");
+    if let Ok(entries) = fs::read_dir(&models) {
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let is_installing = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .is_some_and(|name| name.ends_with(".installing"));
+            if is_installing {
+                paths.push(path);
+            }
+        }
+    }
+    for path in &paths {
+        validate_owned_child(&app_data, path)?;
+    }
+    Ok(paths)
+}
+
+fn abandoned_size(app: &AppHandle) -> Result<u64, String> {
+    Ok(abandoned_paths(app)?
+        .iter()
+        .map(|path| directory_size(path))
+        .sum())
+}
+
+pub fn cleanup_abandoned_work(app: &AppHandle) -> Result<u64, String> {
+    let paths = abandoned_paths(app)?;
+    let bytes = paths.iter().map(|path| directory_size(path)).sum();
+    for path in paths {
+        remove_path(&path)?;
+    }
+    Ok(bytes)
+}
+
 fn summary_for(app: &AppHandle) -> Result<StorageSummary, String> {
     let resolver = app.path();
     let app_data = resolver.app_data_dir().map_err(|error| error.to_string())?;
     let cache = resolver.app_cache_dir().map_err(|error| error.to_string())?;
     let models = app_data.join("models");
 
-    let models_bytes = directory_size(&models);
+    let temporary_bytes = abandoned_size(app)?;
+    let raw_models_bytes = directory_size(&models);
+    let staging_bytes = abandoned_paths(app)?
+        .iter()
+        .filter(|path| path.starts_with(&models))
+        .map(|path| directory_size(path))
+        .sum::<u64>();
+    let models_bytes = raw_models_bytes.saturating_sub(staging_bytes);
     let cache_bytes = directory_size(&cache);
     let total_removable_bytes = owned_roots(app)?
         .iter()
@@ -93,18 +149,27 @@ fn summary_for(app: &AppHandle) -> Result<StorageSummary, String> {
         .sum::<u64>();
     let other_app_data_bytes = total_removable_bytes
         .saturating_sub(models_bytes)
-        .saturating_sub(cache_bytes);
+        .saturating_sub(cache_bytes)
+        .saturating_sub(temporary_bytes);
     let installed_model_directories = fs::read_dir(&models)
         .ok()
         .into_iter()
         .flatten()
         .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_dir())
+        .filter(|entry| {
+            let path = entry.path();
+            path.is_dir()
+                && !path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .is_some_and(|name| name.ends_with(".installing"))
+        })
         .count() as u64;
 
     Ok(StorageSummary {
         models_bytes,
         cache_bytes,
+        temporary_bytes,
         other_app_data_bytes,
         total_removable_bytes,
         installed_model_directories,
@@ -126,6 +191,7 @@ pub fn clear_app_cache(app: AppHandle) -> Result<StorageSummary, String> {
         return Err("Still2Solid refused to clear a cache path that overlaps the application-data root.".into());
     }
     validate_owned_root(&cache)?;
+    cleanup_abandoned_work(&app)?;
     remove_path(&cache)?;
     summary_for(&app)
 }
