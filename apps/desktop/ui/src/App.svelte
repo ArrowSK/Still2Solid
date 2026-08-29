@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { getVersion } from '@tauri-apps/api/app';
   import BackgroundAdvisor from './lib/BackgroundAdvisor.svelte';
+  import FirstRunWizard from './lib/FirstRunWizard.svelte';
   import ModelManager from './lib/ModelManagerM8.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
   import ModelViewer from './lib/ModelViewer.svelte';
@@ -71,6 +73,8 @@
   let fileInput: HTMLInputElement;
   let modelManagerOpen = false;
   let settingsOpen = false;
+  let firstRunWizardOpen = false;
+  let appVersion = 'development';
   let preferredProductionModelId = '';
   let modelAssessments: ModelAssessment[] = [];
   let runtimeStates: ModelRuntimeState[] = [];
@@ -123,12 +127,17 @@
 
   onMount(async () => {
     preferredProductionModelId = localStorage.getItem('still2solid.preferredProductionModel') ?? '';
-    const [detectedHardware, detectedRuntimes] = await Promise.all([
+    const [detectedHardware, detectedRuntimes, detectedVersion] = await Promise.all([
       getHardwareProfile(),
       getModelRuntimeStates(),
+      getVersion().catch(() => 'development'),
     ]);
     hardware = detectedHardware;
     runtimeStates = detectedRuntimes;
+    appVersion = detectedVersion;
+    if (localStorage.getItem('still2solid.firstRunComplete') !== '1') {
+      firstRunWizardOpen = true;
+    }
     clockNow = performance.now();
     clockTimer = setInterval(() => {
       if (generating) clockNow = performance.now();
@@ -315,7 +324,7 @@
   <div class="top-actions">
     <button type="button" class="secondary model-manager-button" on:click={() => (modelManagerOpen = true)}>Models</button>
     <button type="button" class="secondary model-manager-button" on:click={() => (settingsOpen = true)}>Settings</button>
-    <div class="milestone">v0.8.1</div>
+    <div class="milestone">v{appVersion}</div>
   </div>
 </header>
 
@@ -530,6 +539,15 @@
   {/if}
 </main>
 
+<FirstRunWizard
+  bind:open={firstRunWizardOpen}
+  bind:preferredModelId={preferredProductionModelId}
+  bind:modelManagerOpen
+  {hardware}
+  assessments={modelAssessments}
+  {runtimeStates}
+/>
+
 <ModelManager
   bind:open={modelManagerOpen}
   bind:preferredModelId={preferredProductionModelId}
@@ -543,10 +561,11 @@
   bind:preferredModelId={preferredProductionModelId}
   bind:runtimeStates
   platform={hardware.platform}
+  {appVersion}
   disabled={generating}
 />
 
 <footer>
-  <span>Still2Solid v0.8.1</span>
+  <span>Still2Solid v{appVersion}</span>
   <span>Local-first · TripoSR + opt-in SF3D · bundled runtime · canonical GLB + print prep · no telemetry</span>
 </footer>

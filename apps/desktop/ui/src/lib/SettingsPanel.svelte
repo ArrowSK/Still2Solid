@@ -8,10 +8,21 @@
     openApplicationsFolder,
     type StorageSummary,
   } from './storage';
+  import {
+    checkForUpdates,
+    downloadUpdate,
+    listenForUpdateProgress,
+    openUpdateInstaller,
+    type DownloadedUpdate,
+    type UpdateDownloadProgress,
+    type UpdateInfo,
+  } from './updater';
   import type { ModelRuntimeState } from './types';
+  import type { UnlistenFn } from '@tauri-apps/api/event';
 
   export let open = false;
   export let platform = '';
+  export let appVersion = '—';
   export let disabled = false;
   export let runtimeStates: ModelRuntimeState[] = [];
   export let preferredModelId = '';
@@ -24,6 +35,14 @@
   let prepared = false;
   let observedOpen = false;
 
+  let updateInfo: UpdateInfo | null = null;
+  let downloadedUpdate: DownloadedUpdate | null = null;
+  let updateProgress: UpdateDownloadProgress | null = null;
+  let updateBusy = false;
+  let updateError = '';
+  let updateMessage = '';
+  let unlistenUpdateProgress: UnlistenFn | null = null;
+
   $: if (open && !observedOpen) {
     observedOpen = true;
     void refresh();
@@ -34,6 +53,9 @@
     prepared = false;
     error = '';
     message = '';
+    updateError = '';
+    updateMessage = '';
+    updateProgress = null;
   }
 
   function formatBytes(bytes: number): string {
@@ -52,6 +74,52 @@
 
   async function refresh() {
     summary = await getStorageSummary();
+  }
+
+  async function checkUpdate() {
+    if (updateBusy) return;
+    updateBusy = true;
+    updateError = '';
+    updateMessage = '';
+    updateProgress = null;
+    downloadedUpdate = null;
+    try {
+      updateInfo = await checkForUpdates();
+      updateMessage = updateInfo.available
+        ? `Still2Solid ${updateInfo.latestVersion} is available.`
+        : `Still2Solid ${updateInfo.currentVersion} is up to date.`;
+    } catch (caught) {
+      updateError = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  async function downloadAndOpenUpdate() {
+    if (updateBusy || !updateInfo?.available) return;
+    updateBusy = true;
+    updateError = '';
+    updateMessage = '';
+    updateProgress = { downloadedBytes: 0, totalBytes: updateInfo.downloadSize, progress: 0, message: 'Starting update download' };
+    try {
+      downloadedUpdate = await downloadUpdate();
+      await openUpdateInstaller(downloadedUpdate.path);
+      updateMessage = `Still2Solid ${downloadedUpdate.version} was verified and the macOS installer was opened. Drag Still2Solid to Applications and choose Replace.`;
+    } catch (caught) {
+      updateError = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  async function reopenDownloadedUpdate() {
+    if (!downloadedUpdate || updateBusy) return;
+    updateError = '';
+    try {
+      await openUpdateInstaller(downloadedUpdate.path);
+    } catch (caught) {
+      updateError = caught instanceof Error ? caught.message : String(caught);
+    }
   }
 
   async function removeInstalledModels() {
@@ -133,27 +201,83 @@
   }
 
   onMount(() => {
+    void listenForUpdateProgress((progress) => {
+      updateProgress = progress;
+    }).then((unlisten) => {
+      unlistenUpdateProgress = unlisten;
+    }).catch(() => {
+      // Browser-only previews do not expose native updater events.
+    });
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (open && event.key === 'Escape' && !busy) open = false;
+      if (open && event.key === 'Escape' && !busy && !updateBusy) open = false;
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      unlistenUpdateProgress?.();
+    };
   });
 </script>
 
 {#if open}
   <div class="settings-layer">
-    <button class="backdrop" aria-label="Close Settings" type="button" disabled={busy} on:click={() => (open = false)}></button>
+    <button class="backdrop" aria-label="Close Settings" type="button" disabled={busy || updateBusy} on:click={() => (open = false)}></button>
     <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <header>
         <div>
           <span class="eyebrow">SETTINGS</span>
-          <h2 id="settings-title">Storage</h2>
+          <h2 id="settings-title">Still2Solid</h2>
         </div>
-        <button class="secondary close" type="button" disabled={busy} on:click={() => (open = false)}>Close</button>
+        <button class="secondary close" type="button" disabled={busy || updateBusy} on:click={() => (open = false)}>Close</button>
       </header>
 
       <div class="content">
+        <section class="update-card">
+          <div class="update-heading">
+            <div>
+              <span class="eyebrow">SOFTWARE UPDATE</span>
+              <h3>Still2Solid {appVersion === '—' ? '' : `v${appVersion}`}</h3>
+              <p>Update checks are manual. Still2Solid contacts only this project's public GitHub Releases page when you press Check for updates.</p>
+            </div>
+            <button class="secondary" type="button" disabled={updateBusy} on:click={checkUpdate}>
+              {updateBusy && !updateProgress ? 'Checking…' : 'Check for updates'}
+            </button>
+          </div>
+
+          {#if updateInfo}
+            <div class:available={updateInfo.available} class="update-status">
+              <div>
+                <span>{updateInfo.available ? 'Update available' : 'Current version'}</span>
+                <strong>{updateInfo.available ? `v${updateInfo.latestVersion}` : `v${updateInfo.currentVersion}`}</strong>
+                {#if updateInfo.available && updateInfo.downloadSize}<small>{formatBytes(updateInfo.downloadSize)} Apple Silicon DMG</small>{/if}
+              </div>
+              {#if updateInfo.available}
+                <button class="primary" type="button" disabled={updateBusy} on:click={downloadAndOpenUpdate}>
+                  {updateBusy ? 'Downloading…' : 'Download & open update'}
+                </button>
+              {/if}
+            </div>
+          {/if}
+
+          {#if updateProgress}
+            <div class="update-progress" aria-live="polite">
+              <div><span>{updateProgress.message}</span><strong>{Math.round(updateProgress.progress * 100)}%</strong></div>
+              <div class="progress-track"><div style={`width:${Math.max(0, Math.min(100, updateProgress.progress * 100))}%`}></div></div>
+              {#if updateProgress.totalBytes > 0}<small>{formatBytes(updateProgress.downloadedBytes)} / {formatBytes(updateProgress.totalBytes)}</small>{/if}
+            </div>
+          {/if}
+
+          {#if updateError}<div class="notice error" role="alert">{updateError}</div>{/if}
+          {#if updateMessage}<div class="notice success" role="status">{updateMessage}</div>{/if}
+          {#if downloadedUpdate && !updateBusy}
+            <button class="secondary compact" type="button" on:click={reopenDownloadedUpdate}>Open verified installer again</button>
+          {/if}
+          {#if platform === 'macos'}
+            <p class="muted small">The updater verifies the downloaded DMG against the SHA-256 published by GitHub Releases, then opens the normal macOS installer. Because the current app is not Apple-notarized, macOS may still require Privacy & Security → Open Anyway after replacement.</p>
+          {/if}
+        </section>
+
         <section class="storage-card">
           <div class="storage-heading">
             <div>
@@ -167,7 +291,7 @@
             <div class="storage-grid">
               <div><span>Downloaded models</span><strong>{formatBytes(summary.modelsBytes)}</strong><small>{summary.installedModelDirectories} local model {summary.installedModelDirectories === 1 ? 'directory' : 'directories'}</small></div>
               <div><span>Temporary work</span><strong>{formatBytes(summary.temporaryBytes)}</strong><small>Abandoned jobs or interrupted installs</small></div>
-              <div><span>Cache</span><strong>{formatBytes(summary.cacheBytes)}</strong><small>Reclaimable Still2Solid cache</small></div>
+              <div><span>Cache</span><strong>{formatBytes(summary.cacheBytes)}</strong><small>Reclaimable Still2Solid cache, including downloaded update installers</small></div>
               <div><span>Other app data</span><strong>{formatBytes(summary.otherAppDataBytes)}</strong><small>Local Still2Solid data outside model storage</small></div>
             </div>
           {:else}
@@ -234,14 +358,26 @@
 <style>
   .settings-layer { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center; padding: 24px; }
   .backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(4,6,10,.76); backdrop-filter: blur(8px); }
-  .settings-panel { position: relative; width: min(760px,100%); max-height: calc(100vh - 48px); overflow: auto; border: 1px solid var(--border); border-radius: 22px; background: #13161c; box-shadow: 0 28px 90px rgba(0,0,0,.52); }
+  .settings-panel { position: relative; width: min(780px,100%); max-height: calc(100vh - 48px); overflow: auto; border: 1px solid var(--border); border-radius: 22px; background: #13161c; box-shadow: 0 28px 90px rgba(0,0,0,.52); }
   header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 1px solid var(--border); background: rgba(19,22,28,.96); backdrop-filter: blur(10px); }
   h2 { margin: 3px 0 0; font-size: 24px; }
   h3 { margin: 0 0 7px; font-size: 16px; }
   p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 13px; }
   .eyebrow { color: var(--muted); font-size: 11px; letter-spacing: .12em; font-weight: 700; }
   .content { display: grid; gap: 12px; padding: 20px 22px 24px; }
-  .storage-card, .action-card, .uninstall-card { border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 17px; }
+  .storage-card, .action-card, .uninstall-card, .update-card { border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 17px; }
+  .update-card { display: grid; gap: 13px; border-color: #3c4e7e; background: #171d2a; }
+  .update-heading, .update-status { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+  .update-heading > div { max-width: 540px; }
+  .update-status { padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #101319; }
+  .update-status.available { border-color: #496d5c; background: #16251d; }
+  .update-status > div { display: grid; gap: 3px; }
+  .update-status span, .update-status small, .update-progress span, .update-progress small { color: var(--muted); font-size: 12px; }
+  .update-status strong { font-size: 18px; }
+  .update-progress { display: grid; gap: 7px; }
+  .update-progress > div:first-child { display: flex; justify-content: space-between; gap: 12px; }
+  .progress-track { height: 7px; overflow: hidden; border-radius: 999px; background: #252a35; }
+  .progress-track div { height: 100%; background: var(--accent); }
   .storage-heading, .action-card { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
   .storage-heading > div { display: grid; gap: 5px; }
   .storage-heading span, .storage-grid span, .storage-grid small { color: var(--muted); font-size: 12px; }
@@ -266,11 +402,12 @@
   .notice.success { border: 1px solid #365f51; color: #bdebdc; background: #14231e; }
   .notice.caution { border: 1px solid #5b4b31; color: #e5c38a; background: #211d16; }
   .muted { margin-top: 12px; }
+  .small { font-size: 11px; }
   @media (max-width: 680px) {
     .settings-layer { padding: 10px; }
     .settings-panel { max-height: calc(100vh - 20px); }
     .storage-grid { grid-template-columns: 1fr; }
-    .storage-heading, .action-card { align-items: stretch; flex-direction: column; }
-    .action-card button { align-self: start; }
+    .storage-heading, .action-card, .update-heading, .update-status { align-items: stretch; flex-direction: column; }
+    .action-card button, .update-heading button, .update-status button { align-self: start; }
   }
 </style>

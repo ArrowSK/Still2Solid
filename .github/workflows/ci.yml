@@ -24,7 +24,10 @@ jobs:
             workers/triposr/worker.py \
             workers/sf3d/install.py \
             workers/sf3d/worker.py \
-            scripts/prepare_python_runtime.py
+            scripts/prepare_python_runtime.py \
+            scripts/validate_triposr_sources.py
+      - name: Verify pinned TripoSR source URLs and hashes
+        run: python3 scripts/validate_triposr_sources.py
 
   rust-core:
     runs-on: macos-14

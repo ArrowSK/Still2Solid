@@ -20,9 +20,11 @@ Still2Solid does not include telemetry or analytics.
 
 ## When network access is used
 
-Network access is used when preparing release/runtime dependencies and when the user installs a production model. Production inference itself is designed to work from local installed assets.
+Network access is used when preparing release/runtime dependencies, when the user installs a production model, and when the user explicitly checks for or downloads an application update. Production inference itself is designed to work from local installed assets.
 
 Downloads are constrained by the adapter/release code:
+
+Application update checks are manual. The updater talks only to the public `ArrowSK/Still2Solid` GitHub Releases endpoint after the user presses **Check for updates**. A downloaded Apple Silicon DMG is kept in Still2Solid's cache, verified against the SHA-256 digest/checksum published with the release, and only then opened through the normal macOS installer route. The updater does not disable or bypass Gatekeeper.
 
 - model IDs are allowlisted;
 - production source/model revisions are immutable;

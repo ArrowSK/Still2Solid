@@ -54,7 +54,7 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build signed Still2Solid DMG
+      - name: Build Developer ID signed Still2Solid DMG
         if: steps.apple-signing.outputs.available == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -65,9 +65,44 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run tauri:build -- --target aarch64-apple-darwin --bundles dmg
 
-      - name: Build unsigned Still2Solid DMG
+      - name: Build ad-hoc signed Still2Solid DMG
         if: steps.apple-signing.outputs.available != 'true'
+        env:
+          # Apple Silicon applications distributed from the Internet must at least
+          # carry a valid code signature. '-' asks Tauri/codesign for an ad-hoc
+          # signature; Gatekeeper may then require explicit user approval, but the
+          # bundle is no longer a truly unsigned ARM application.
+          APPLE_SIGNING_IDENTITY: '-'
         run: npm run tauri:build -- --target aarch64-apple-darwin --bundles dmg
+
+      - name: Verify packaged macOS application signature
+        shell: bash
+        env:
+          SIGNED_BUILD: ${{ steps.apple-signing.outputs.available }}
+        run: |
+          set -euo pipefail
+          DMG=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name 'Still2Solid_*_aarch64.dmg' -print -quit)
+          test -n "$DMG"
+
+          MOUNT=$(mktemp -d /tmp/still2solid-dmg.XXXXXX)
+          cleanup() {
+            hdiutil detach "$MOUNT" >/dev/null 2>&1 || true
+            rmdir "$MOUNT" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "$DMG" -readonly -nobrowse -mountpoint "$MOUNT" >/dev/null
+          APP="$MOUNT/Still2Solid.app"
+          test -d "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv --verbose=4 "$APP" 2>&1 | tee /tmp/codesign.txt
+          if [[ "$SIGNED_BUILD" != 'true' ]]; then
+            grep -q "Signature=adhoc" /tmp/codesign.txt
+          fi
+
+          hdiutil detach "$MOUNT" >/dev/null
+          trap - EXIT
+          rmdir "$MOUNT"
 
       - name: Create checksum
         run: |
@@ -98,9 +133,9 @@ jobs:
           CHECKSUM="src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Still2Solid-macOS-Apple-Silicon.sha256.txt"
 
           if [[ "$SIGNED_BUILD" == 'true' ]]; then
-            SECURITY_NOTE="This macOS build was produced with the configured Apple Developer signing identity."
+            SECURITY_NOTE="This macOS build was produced with the configured Apple Developer signing identity and notarization hooks."
           else
-            SECURITY_NOTE="This macOS build is currently unsigned. On first launch, macOS may require approval in System Settings → Privacy & Security → Open Anyway."
+            SECURITY_NOTE="This Apple Silicon build is ad-hoc code-signed rather than left unsigned. Gatekeeper can therefore evaluate the downloaded app normally, but because it is not yet Developer ID notarized, macOS may require approval in System Settings → Privacy & Security → Open Anyway on first launch."
           fi
 
           cat > /tmp/release-notes.md <<EOF
@@ -108,9 +143,15 @@ jobs:
 
           This release includes the macOS Apple Silicon package for M1/M2/M3/M4 Macs. Install it by opening the DMG and dragging Still2Solid to Applications. Python is bundled; production model weights are installed from inside the app when requested.
 
-          Settings → Storage shows Still2Solid's local disk usage, can remove downloaded models, clear temporary files, and prepare a complete uninstall before the app is moved to Trash. Normal upgrades intentionally keep downloaded models.
+          First start now includes a short hardware-aware model selection wizard. The normal Model Manager remains available afterwards.
 
-          This release also makes temporary storage self-cleaning: abandoned generation workspaces and interrupted model-install staging are removed on the next launch, pip's shared user download cache is disabled for model installation, and model support caches needed for offline inference stay inside model-owned Still2Solid storage.
+          TripoSR installation is resilient: transient downloads are retried, pinned source files fall back from raw GitHub delivery to the exact Git blob API, and the checkpoint has an automatic alternate official URL. If automatic installation still fails, Model Manager reveals an optional direct HTTPS checkpoint-link recovery field. Any recovery file must match the same pinned SHA-256 before activation.
+
+          Still2Solid includes a manual in-app updater under Settings. It checks this repository's latest public GitHub Release on demand, verifies the downloaded DMG against the published SHA-256 and opens the normal macOS replacement installer.
+
+          CI validates every raw GitHub source URL and Git blob hash used by the TripoSR installer so a missing or renamed source path cannot silently reach a release again.
+
+          Settings → Storage shows Still2Solid's local disk usage, can remove downloaded models, clear temporary files, and prepare a complete uninstall before the app is moved to Trash. Normal upgrades intentionally keep downloaded models.
 
           ${SECURITY_NOTE}
 

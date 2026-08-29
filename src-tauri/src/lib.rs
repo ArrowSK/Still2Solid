@@ -1,6 +1,8 @@
 mod runtime;
 mod sf3d;
 mod storage;
+mod triposr_installer;
+mod updater;
 
 use serde::Serialize;
 use std::process::Command;
@@ -144,6 +146,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Arc::new(runtime::RuntimeState::default()))
         .manage(Arc::new(sf3d::Sf3dState::default()))
+        .manage(Arc::new(triposr_installer::TripoInstallerState::default()))
         .setup(|app| {
             // Model installers inherit this setting so pip never writes a shared
             // user-level download cache outside Still2Solid-owned storage.
@@ -162,7 +165,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_hardware_profile,
             runtime::get_model_runtime_states,
-            runtime::install_model,
+            triposr_installer::install_model,
             runtime::uninstall_model,
             runtime::generate_triposr,
             runtime::cancel_generation,
@@ -175,6 +178,9 @@ pub fn run() {
             storage::clear_app_cache,
             storage::clear_app_owned_data,
             storage::open_applications_folder,
+            updater::check_for_updates,
+            updater::download_update,
+            updater::open_update_installer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Still2Solid");
