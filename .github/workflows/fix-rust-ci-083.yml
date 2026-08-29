@@ -1,0 +1,65 @@
+name: Apply final 0.8.3 Rust CI fixes
+
+on:
+  push:
+    branches:
+      - 'fix/triposr-updater-0.8.3'
+    paths:
+      - '.github/workflows/fix-rust-ci-083.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/triposr-updater-0.8.3
+      - name: Patch Rust compile failures
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'Expected text not found in {path}: {old[:160]!r}')
+              file.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # runtime.rs still exposes the superseded installer as a Tauri command.
+          # The new hardened installer owns the public install_model command.
+          replace_once(
+              'src-tauri/src/runtime.rs',
+              '#[tauri::command]\npub async fn install_model(\n',
+              'pub async fn install_model(\n',
+          )
+
+          # reqwest's JSON convenience feature is intentionally disabled. Parse the
+          # small GitHub API responses through serde_json instead of widening features.
+          replace_once(
+              'src-tauri/src/triposr_installer.rs',
+              '''                let payload = response\n                    .json::<GitBlobResponse>()\n                    .map_err(|error| format!("GitHub blob fallback returned invalid JSON: {error}"))?;''',
+              '''                let text = response\n                    .text()\n                    .map_err(|error| format!("Could not read GitHub blob fallback response: {error}"))?;\n                let payload = serde_json::from_str::<GitBlobResponse>(&text)\n                    .map_err(|error| format!("GitHub blob fallback returned invalid JSON: {error}"))?;''',
+          )
+          replace_once(
+              'src-tauri/src/triposr_installer.rs',
+              'use sha2::{Digest as Sha2Digest, Sha256};',
+              'use sha2::Sha256;',
+          )
+
+          replace_once(
+              'src-tauri/src/updater.rs',
+              '''    response\n        .json::<GitHubRelease>()\n        .map_err(|error| format!("GitHub returned an unreadable release response: {error}"))''',
+              '''    let text = response\n        .text()\n        .map_err(|error| format!("Could not read the GitHub release response: {error}"))?;\n    serde_json::from_str::<GitHubRelease>(&text)\n        .map_err(|error| format!("GitHub returned an unreadable release response: {error}"))''',
+          )
+      - name: Commit compile fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/src/runtime.rs src-tauri/src/triposr_installer.rs src-tauri/src/updater.rs
+          git commit -m "fix: resolve final Rust CI errors"
+          git push origin HEAD:fix/triposr-updater-0.8.3
