@@ -80,13 +80,29 @@ jobs:
         env:
           SIGNED_BUILD: ${{ steps.apple-signing.outputs.available }}
         run: |
-          APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Still2Solid.app"
+          set -euo pipefail
+          DMG=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name 'Still2Solid_*_aarch64.dmg' -print -quit)
+          test -n "$DMG"
+
+          MOUNT=$(mktemp -d /tmp/still2solid-dmg.XXXXXX)
+          cleanup() {
+            hdiutil detach "$MOUNT" >/dev/null 2>&1 || true
+            rmdir "$MOUNT" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "$DMG" -readonly -nobrowse -mountpoint "$MOUNT" >/dev/null
+          APP="$MOUNT/Still2Solid.app"
           test -d "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           codesign -dv --verbose=4 "$APP" 2>&1 | tee /tmp/codesign.txt
           if [[ "$SIGNED_BUILD" != 'true' ]]; then
             grep -q "Signature=adhoc" /tmp/codesign.txt
           fi
+
+          hdiutil detach "$MOUNT" >/dev/null
+          trap - EXIT
+          rmdir "$MOUNT"
 
       - name: Create checksum
         run: |
