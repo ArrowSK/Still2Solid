@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 export interface StorageSummary {
   modelsBytes: number;
   cacheBytes: number;
+  temporaryBytes: number;
   otherAppDataBytes: number;
   totalRemovableBytes: number;
   installedModelDirectories: number;
@@ -12,6 +13,7 @@ export interface StorageSummary {
 const emptySummary = (): StorageSummary => ({
   modelsBytes: 0,
   cacheBytes: 0,
+  temporaryBytes: 0,
   otherAppDataBytes: 0,
   totalRemovableBytes: 0,
   installedModelDirectories: 0,
