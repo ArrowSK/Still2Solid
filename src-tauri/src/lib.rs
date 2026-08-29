@@ -1,6 +1,7 @@
 mod runtime;
 mod sf3d;
 mod storage;
+mod updater;
 
 use serde::Serialize;
 use std::process::Command;
@@ -175,6 +176,9 @@ pub fn run() {
             storage::clear_app_cache,
             storage::clear_app_owned_data,
             storage::open_applications_folder,
+            updater::check_for_updates,
+            updater::download_update,
+            updater::open_update_installer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Still2Solid");
