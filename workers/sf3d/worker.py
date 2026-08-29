@@ -76,6 +76,8 @@ def main() -> int:
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
     os.environ["HF_HOME"] = str(model_root / "hf-cache")
+    os.environ["TORCH_HOME"] = str(model_root / "torch-cache")
+    os.environ["XDG_CACHE_HOME"] = str(model_root / "cache")
     os.environ["U2NET_HOME"] = str(model_root / "rembg")
     sys.path.insert(0, str(source_root))
 
