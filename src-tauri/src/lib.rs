@@ -144,6 +144,21 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Arc::new(runtime::RuntimeState::default()))
         .manage(Arc::new(sf3d::Sf3dState::default()))
+        .setup(|app| {
+            // Model installers inherit this setting so pip never writes a shared
+            // user-level download cache outside Still2Solid-owned storage.
+            std::env::set_var("PIP_NO_CACHE_DIR", "1");
+            std::env::set_var("PIP_DISABLE_PIP_VERSION_CHECK", "1");
+
+            // A force-quit, crash, or power loss may leave only job workspaces or
+            // *.installing staging directories. They are never user exports, so
+            // clear them before any worker can start on this launch.
+            let handle = app.handle().clone();
+            if let Err(error) = storage::cleanup_abandoned_work(&handle) {
+                eprintln!("Still2Solid startup cleanup warning: {error}");
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_hardware_profile,
             runtime::get_model_runtime_states,

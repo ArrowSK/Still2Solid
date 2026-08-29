@@ -195,13 +195,17 @@ See [Security & Privacy](SECURITY_PRIVACY.md) for the exact boundary.
 
 ## 11. Storage and uninstall
 
-Open **Settings → Storage** to see how much local space Still2Solid is using. The panel separates downloaded model runtimes, cache and other application data.
+Open **Settings → Storage** to see how much local space Still2Solid is using. The panel separates downloaded models, abandoned temporary work, cache and other application data.
 
 - **Remove downloaded models** removes installed TripoSR and Stable Fast 3D runtimes/weights while keeping the application. Reinstall them later from **Models**.
-- **Clear cache** removes temporary Still2Solid cache without touching model installations or exported files.
-- **Prepare for uninstall** removes installed model runtimes, Still2Solid app data, cache and local `still2solid.*` preferences/timing data. Exported GLB/OBJ/STL/3MF files saved elsewhere are never deleted.
+- **Clear temporary files** removes Still2Solid cache plus abandoned generation workspaces and interrupted `.installing` model staging. Installed models and exported files are not touched.
+- **Prepare for uninstall** removes installed model runtimes, Still2Solid app data, cache, abandoned temporary work and local `still2solid.*` preferences/timing data. Exported GLB/OBJ/STL/3MF files saved elsewhere are never deleted.
 
-macOS does not call an application when it is dragged to Trash, so Still2Solid cannot run this cleanup automatically after deletion. For a complete uninstall, run **Prepare for uninstall** first, wait for **Cleanup complete**, quit Still2Solid, then move the application from **Applications** to **Trash**. On macOS the panel can open the Applications folder for the final step.
+Still2Solid also performs automatic crash-recovery cleanup on startup. If the app was force-quit, crashed, or the computer lost power while a generation or model installation was in progress, the next launch removes leftover job workspaces and incomplete installer staging before a new worker starts.
+
+Model installers do not use pip's shared user cache. Model-specific support caches required for offline inference stay under that model's Still2Solid-owned directory, so uninstalling the model removes those support files too.
+
+macOS does not call an application when it is dragged to Trash, so Still2Solid cannot run complete-uninstall cleanup after deletion. For a complete uninstall, run **Prepare for uninstall** first, wait for **Cleanup complete**, quit Still2Solid, then move the application from **Applications** to **Trash**. On macOS the panel can open the Applications folder for the final step.
 
 Replacing or updating the `.app` does **not** remove downloaded models. This is intentional so normal updates do not force large model downloads again.
 

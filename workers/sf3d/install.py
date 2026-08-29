@@ -102,6 +102,12 @@ def main() -> int:
         raise RuntimeError("A Hugging Face read token is required for the gated Stable Fast 3D model.")
 
     root.mkdir(parents=True, exist_ok=True)
+    # Never allow Python tooling to write shared caches into ~/.cache or another
+    # user-global location. Everything persistent for this model stays below
+    # its Still2Solid model root so Model Manager can remove it completely.
+    os.environ["PIP_NO_CACHE_DIR"] = "1"
+    os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+
     emit("source", 0.0, 0.02, "Downloading pinned Stable Fast 3D source")
     archive = root / "source.tar.gz"
     source_url = f"https://github.com/Stability-AI/stable-fast-3d/archive/{SOURCE_REVISION}.tar.gz"
@@ -144,11 +150,13 @@ def main() -> int:
         raise RuntimeError(f"Stable Fast 3D checkpoint SHA-256 mismatch: expected {MODEL_SHA256}, got {actual}")
     emit("weights", 1.0, 0.73, "Stable Fast 3D checkpoint verified")
 
-    # Pin DINO and CLIP support assets into an app-owned Hugging Face cache during
-    # installation so inference can run with HF_HUB_OFFLINE=1.
+    # Pin DINO and CLIP support assets into model-owned caches during installation
+    # so inference can run offline and uninstalling the model removes them too.
     hf_home = root / "hf-cache"
     env = os.environ.copy()
     env["HF_HOME"] = str(hf_home)
+    env["TORCH_HOME"] = str(root / "torch-cache")
+    env["XDG_CACHE_HOME"] = str(root / "cache")
     env["HF_HUB_DISABLE_TELEMETRY"] = "1"
     emit("support", 0.05, 0.75, "Caching pinned DINO image encoder for offline inference")
     code = (

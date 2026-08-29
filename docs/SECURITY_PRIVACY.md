@@ -36,6 +36,8 @@ M7 release builds prepare a pinned Python 3.12 standalone artifact selected by t
 
 Model installers use that bundled interpreter as the normal packaged-build base and create separate private model environments. Source/development builds can use an explicit compatible developer interpreter, but ordinary packaged users should not need to configure Python.
 
+Python package installers are run with pip's shared download cache disabled. Model-specific support caches that must remain available for offline inference are kept below the corresponding Still2Solid model directory rather than in a user-global `~/.cache` location.
+
 ## Stable Fast 3D gated credentials
 
 SF3D is optional and gated. Still2Solid never accepts the upstream gate on the user's behalf.
@@ -77,11 +79,21 @@ Timing profiles are local and contain only technical execution context such as m
 
 Exports are created locally. Still2Solid does not upload GLB/OBJ/STL/3MF data during export. Derived export/print-preparation paths do not silently rewrite the canonical GLB master.
 
+## Temporary files and crash recovery
+
+Generation workspaces and model-install staging directories live only inside Still2Solid's application-data tree. A normal success, failure or cancellation path already removes its job workspace.
+
+A force-quit, process crash or power loss can prevent normal cleanup code from running. On the next application launch, before any model worker is started, Still2Solid removes abandoned `jobs` workspaces and model directories ending in `.installing`. **Settings → Storage → Clear temporary files** performs the same abandoned-work cleanup and also clears the normal Still2Solid cache.
+
+The cleanup target is deliberately narrow: installed model directories and user exports are not treated as temporary work.
+
 ## Storage cleanup and uninstall privacy
 
 Downloaded production models live in Still2Solid's application-data area rather than inside the application bundle. This keeps updates/reinstalls separate from multi-gigabyte model downloads.
 
 **Settings → Storage** exposes only app-scoped cleanup operations. The Rust side resolves Tauri application data/cache/config/local-data roots, validates that cleanup targets are Still2Solid-owned paths, and refuses unexpected paths before recursive deletion. The UI does not receive generic filesystem deletion capability.
+
+The storage panel separately reports installed model data, abandoned temporary work, cache and other Still2Solid application data. **Clear temporary files** removes only abandoned generation/install work and reclaimable cache. Model-local support caches needed for offline inference remain part of the installed model and disappear when that model is uninstalled.
 
 **Prepare for uninstall** first invokes the existing model uninstall paths, then removes Still2Solid-owned app data/cache and local `still2solid.*` preferences. User-exported model files saved outside Still2Solid's application-data directories are not part of cleanup.
 
@@ -114,6 +126,9 @@ Unless an explicit architecture decision changes them, the following remain true
 - source images are not uploaded for background classification;
 - failed verification never silently falls back to unverified execution;
 - cancellation terminates/cleans up the worker;
+- abandoned job/install staging is removed on the next launch;
+- pip does not use a shared user-global download cache during model installation;
+- model support caches required for offline inference stay model-owned and are removed with the model;
 - derived exports never mutate the canonical production master.
 
 ## Reporting a security issue
