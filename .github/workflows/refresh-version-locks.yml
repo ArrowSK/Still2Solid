@@ -25,7 +25,7 @@ jobs:
       - name: Refresh npm lock metadata
         run: npm install --package-lock-only --ignore-scripts
       - name: Refresh Cargo lock metadata
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+        run: cargo update --manifest-path src-tauri/Cargo.toml --workspace
       - name: Commit refreshed locks
         shell: bash
         run: |
