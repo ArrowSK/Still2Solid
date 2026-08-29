@@ -1,6 +1,8 @@
 use crate::runtime::{get_model_runtime_states, ModelRuntimeState};
-use md5;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use reqwest::blocking::Client;
+use reqwest::StatusCode;
+use serde::Deserialize;
 use sha1::{Digest as Sha1Digest, Sha1};
 use sha2::{Digest as Sha2Digest, Sha256};
 use std::fs::{self, File};
@@ -8,6 +10,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::thread::sleep;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const TRIPOSR_SOURCE_REVISION: &str = "107cefdc244c39106fa830359024f6a2f1c78871";
@@ -15,13 +19,12 @@ const TRIPOSR_WEIGHT_REVISION: &str = "5b521936b01fbe1890f6f9baed0254ab6351c04a"
 const TRIPOSR_WEIGHT_SHA256: &str = "429e2c6b22a0923967459de24d67f05962b235f79cde6b032aa7ed2ffcd970ee";
 const U2NET_MD5: &str = "60024c5c889badc19c04ad937298a77b";
 const INSTALL_SCHEMA: u32 = 1;
+const HTTP_ATTEMPTS: usize = 3;
 
 const WORKER: &str = include_str!("../../workers/triposr/worker.py");
 const TRIPOSR_CONFIG: &str = include_str!("../../workers/triposr/config.yaml");
 const DINO_CONFIG: &str = include_str!("../../workers/triposr/dino-config.json");
 
-// Exact files that exist at TRIPOSR_SOURCE_REVISION. Keep the Git blob SHA-1 next
-// to each path so an upstream path change or unexpected response cannot be activated.
 pub(crate) const SOURCE_FILES: &[(&str, &str)] = &[
     ("LICENSE", "6c440ca1ef32cedcc2257b99953add129199ed26"),
     ("tsr/system.py", "bcdb69b2e5c85b3c0ffebd7ff82fc4fe7b3d543e"),
@@ -67,6 +70,13 @@ struct InstallProgressEvent {
     message: String,
     bytes_downloaded: Option<u64>,
     bytes_total: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitBlobResponse {
+    sha: String,
+    encoding: String,
+    content: String,
 }
 
 fn model_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -167,7 +177,29 @@ fn emit_install(
     );
 }
 
-fn download(
+fn retry_delay(attempt: usize) -> Duration {
+    Duration::from_millis(700 * (1u64 << attempt.saturating_sub(1).min(3)))
+}
+
+fn is_retryable_status(status: StatusCode) -> bool {
+    status == StatusCode::REQUEST_TIMEOUT
+        || status == StatusCode::TOO_MANY_REQUESTS
+        || status.is_server_error()
+}
+
+fn validate_https_url(value: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(value.trim())
+        .map_err(|_| "The alternate model link is not a valid URL.".to_string())?;
+    if parsed.scheme() != "https" {
+        return Err("Alternate model links must use HTTPS.".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Alternate model links must not contain embedded credentials.".to_string());
+    }
+    Ok(parsed.to_string())
+}
+
+fn download_http_once(
     app: &AppHandle,
     client: &Client,
     url: &str,
@@ -181,13 +213,22 @@ fn download(
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let temporary = destination.with_extension("part");
+    if temporary.exists() {
+        let _ = fs::remove_file(&temporary);
+    }
+
     let mut response = client
         .get(url)
         .send()
-        .map_err(|error| format!("Download failed: {error}"))?;
-    if !response.status().is_success() {
-        return Err(format!("Download failed with HTTP {}: {url}", response.status()));
+        .map_err(|error| format!("Network error while downloading {url}: {error}"))?;
+    if response.url().scheme() != "https" {
+        return Err("Still2Solid refused a download redirected away from HTTPS.".to_string());
     }
+    if !response.status().is_success() {
+        let status = response.status();
+        return Err(format!("HTTP {status} while downloading {url}"));
+    }
+
     let total = response.content_length();
     let mut file = File::create(&temporary).map_err(|error| error.to_string())?;
     let mut downloaded = 0u64;
@@ -214,8 +255,64 @@ fn download(
         );
     }
     file.flush().map_err(|error| error.to_string())?;
+    if destination.exists() {
+        fs::remove_file(destination).map_err(|error| error.to_string())?;
+    }
     fs::rename(&temporary, destination).map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn download_http_with_retries(
+    app: &AppHandle,
+    client: &Client,
+    urls: &[String],
+    destination: &Path,
+    stage: &str,
+    overall_start: f64,
+    overall_end: f64,
+    message: &str,
+) -> Result<(), String> {
+    let mut failures = Vec::new();
+    for (source_index, url) in urls.iter().enumerate() {
+        for attempt in 1..=HTTP_ATTEMPTS {
+            let attempt_message = if source_index == 0 {
+                format!("{message} · attempt {attempt}/{HTTP_ATTEMPTS}")
+            } else {
+                format!("{message} · fallback source {} · attempt {attempt}/{HTTP_ATTEMPTS}", source_index + 1)
+            };
+            emit_install(app, stage, 0.0, overall_start, attempt_message, None, None);
+            match download_http_once(
+                app,
+                client,
+                url,
+                destination,
+                stage,
+                overall_start,
+                overall_end,
+                message,
+            ) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    let retryable = error
+                        .split_whitespace()
+                        .nth(1)
+                        .and_then(|value| value.parse::<u16>().ok())
+                        .and_then(|code| StatusCode::from_u16(code).ok())
+                        .is_some_and(is_retryable_status)
+                        || error.starts_with("Network error");
+                    failures.push(error);
+                    if !retryable || attempt == HTTP_ATTEMPTS {
+                        break;
+                    }
+                    sleep(retry_delay(attempt));
+                }
+            }
+        }
+    }
+    Err(failures
+        .last()
+        .cloned()
+        .unwrap_or_else(|| "Download failed without a response.".to_string()))
 }
 
 fn git_blob_sha1(path: &Path) -> Result<String, String> {
@@ -224,6 +321,120 @@ fn git_blob_sha1(path: &Path) -> Result<String, String> {
     hasher.update(format!("blob {}\0", bytes.len()).as_bytes());
     hasher.update(&bytes);
     Ok(hex::encode(hasher.finalize()))
+}
+
+fn download_source_blob_fallback(
+    app: &AppHandle,
+    client: &Client,
+    expected_blob: &str,
+    destination: &Path,
+    overall_start: f64,
+    overall_end: f64,
+) -> Result<(), String> {
+    emit_install(
+        app,
+        "source",
+        0.0,
+        overall_start,
+        "Raw source delivery failed; retrying the same pinned file through GitHub's blob API",
+        None,
+        None,
+    );
+    let url = format!(
+        "https://api.github.com/repos/VAST-AI-Research/TripoSR/git/blobs/{expected_blob}"
+    );
+    let mut last_error = None;
+    for attempt in 1..=HTTP_ATTEMPTS {
+        match client
+            .get(&url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+        {
+            Ok(response) if response.status().is_success() => {
+                let payload = response
+                    .json::<GitBlobResponse>()
+                    .map_err(|error| format!("GitHub blob fallback returned invalid JSON: {error}"))?;
+                if payload.sha != expected_blob || payload.encoding != "base64" {
+                    return Err("GitHub blob fallback did not match the expected pinned object.".to_string());
+                }
+                let compact = payload
+                    .content
+                    .chars()
+                    .filter(|ch| !ch.is_whitespace())
+                    .collect::<String>();
+                let bytes = BASE64
+                    .decode(compact.as_bytes())
+                    .map_err(|error| format!("Could not decode the pinned GitHub blob: {error}"))?;
+                if let Some(parent) = destination.parent() {
+                    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                fs::write(destination, bytes).map_err(|error| error.to_string())?;
+                if git_blob_sha1(destination)? != expected_blob {
+                    let _ = fs::remove_file(destination);
+                    return Err("GitHub blob fallback failed source integrity verification.".to_string());
+                }
+                emit_install(
+                    app,
+                    "source",
+                    1.0,
+                    overall_end,
+                    "Pinned source recovered through GitHub's blob API",
+                    None,
+                    None,
+                );
+                return Ok(());
+            }
+            Ok(response) => {
+                let status = response.status();
+                last_error = Some(format!("GitHub blob API returned HTTP {status}."));
+                if !is_retryable_status(status) {
+                    break;
+                }
+            }
+            Err(error) => last_error = Some(format!("GitHub blob API network error: {error}")),
+        }
+        if attempt < HTTP_ATTEMPTS {
+            sleep(retry_delay(attempt));
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "GitHub blob fallback failed.".to_string()))
+}
+
+fn download_verified_source(
+    app: &AppHandle,
+    client: &Client,
+    relative: &str,
+    expected_blob: &str,
+    destination: &Path,
+    overall_start: f64,
+    overall_end: f64,
+) -> Result<(), String> {
+    let raw_url = format!(
+        "https://raw.githubusercontent.com/VAST-AI-Research/TripoSR/{TRIPOSR_SOURCE_REVISION}/{relative}"
+    );
+    let result = download_http_with_retries(
+        app,
+        client,
+        &[raw_url],
+        destination,
+        "source",
+        overall_start,
+        overall_end,
+        "Downloading pinned TripoSR source",
+    );
+    if result.is_ok() && git_blob_sha1(destination)? == expected_blob {
+        return Ok(());
+    }
+    let _ = fs::remove_file(destination);
+    download_source_blob_fallback(
+        app,
+        client,
+        expected_blob,
+        destination,
+        overall_start,
+        overall_end,
+    )
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -245,7 +456,12 @@ fn md5_file(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", md5::compute(bytes)))
 }
 
-fn install_blocking(app: AppHandle) -> Result<ModelRuntimeState, String> {
+fn install_blocking(app: AppHandle, alternate_model_url: Option<String>) -> Result<ModelRuntimeState, String> {
+    let alternate_model_url = alternate_model_url
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| validate_https_url(&value))
+        .transpose()?;
+
     let final_root = model_root(&app)?;
     let staging = final_root.with_extension("installing");
     if staging.exists() {
@@ -275,6 +491,10 @@ fn install_blocking(app: AppHandle) -> Result<ModelRuntimeState, String> {
             "--disable-pip-version-check",
             "--no-input",
             "--no-cache-dir",
+            "--retries",
+            "5",
+            "--timeout",
+            "60",
         ];
         pip_args.extend(PYTHON_REQUIREMENTS.iter().copied());
         emit_install(&app, "runtime", 0.25, 0.05, "Installing pinned model dependencies", None, None);
@@ -283,63 +503,74 @@ fn install_blocking(app: AppHandle) -> Result<ModelRuntimeState, String> {
             .status()
             .map_err(|error| error.to_string())?;
         if !status.success() {
-            return Err("Could not install the pinned TripoSR Python dependencies.".into());
+            return Err("Could not install the pinned TripoSR Python dependencies after pip retries.".into());
         }
         emit_install(&app, "runtime", 1.0, 0.23, "Private runtime ready", None, None);
 
         let client = Client::builder()
             .user_agent(format!("Still2Solid/{}", env!("CARGO_PKG_VERSION")))
+            .timeout(Duration::from_secs(120))
             .build()
             .map_err(|error| error.to_string())?;
         let source_root = staging.join("source");
         for (index, (relative, expected_blob)) in SOURCE_FILES.iter().enumerate() {
-            let url = format!(
-                "https://raw.githubusercontent.com/VAST-AI-Research/TripoSR/{TRIPOSR_SOURCE_REVISION}/{relative}"
-            );
             let destination = source_root.join(relative);
             let start = 0.23 + index as f64 / SOURCE_FILES.len() as f64 * 0.12;
             let end = 0.23 + (index + 1) as f64 / SOURCE_FILES.len() as f64 * 0.12;
-            download(
+            download_verified_source(
                 &app,
                 &client,
-                &url,
+                relative,
+                expected_blob,
                 &destination,
-                "source",
                 start,
                 end,
-                "Downloading pinned TripoSR source",
             )?;
-            let actual = git_blob_sha1(&destination)?;
-            if &actual != expected_blob {
-                return Err(format!("Pinned TripoSR source verification failed for {relative}."));
-            }
         }
         emit_install(&app, "source", 1.0, 0.35, "Pinned TripoSR source verified", None, None);
 
-        let model_url = format!(
-            "https://huggingface.co/stabilityai/TripoSR/resolve/{TRIPOSR_WEIGHT_REVISION}/model.ckpt?download=true"
-        );
+        let official_urls = vec![
+            format!("https://huggingface.co/stabilityai/TripoSR/resolve/{TRIPOSR_WEIGHT_REVISION}/model.ckpt?download=true"),
+            format!("https://huggingface.co/stabilityai/TripoSR/resolve/{TRIPOSR_WEIGHT_REVISION}/model.ckpt"),
+        ];
+        let model_urls = alternate_model_url
+            .as_ref()
+            .map(|url| vec![url.clone()])
+            .unwrap_or(official_urls);
         let model = staging.join("model.ckpt");
-        download(
+        let model_message = if alternate_model_url.is_some() {
+            "Downloading TripoSR checkpoint from the user-supplied recovery link"
+        } else {
+            "Downloading the pinned TripoSR checkpoint"
+        };
+        download_http_with_retries(
             &app,
             &client,
-            &model_url,
+            &model_urls,
             &model,
             "weights",
             0.35,
             0.79,
-            "Downloading the pinned TripoSR checkpoint",
-        )?;
+            model_message,
+        )
+        .map_err(|error| {
+            if alternate_model_url.is_some() {
+                format!("Alternate model download failed: {error}")
+            } else {
+                format!("Automatic TripoSR model download failed after retries and fallback URL: {error}")
+            }
+        })?;
         if sha256_file(&model)? != TRIPOSR_WEIGHT_SHA256 {
-            return Err("TripoSR checkpoint SHA-256 verification failed.".into());
+            let _ = fs::remove_file(&model);
+            return Err("TripoSR checkpoint SHA-256 verification failed. Still2Solid removed the untrusted file.".into());
         }
         emit_install(&app, "weights", 1.0, 0.79, "TripoSR checkpoint verified", None, None);
 
         let u2net = staging.join("u2net.onnx");
-        download(
+        download_http_with_retries(
             &app,
             &client,
-            "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",
+            &["https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx".to_string()],
             &u2net,
             "foreground",
             0.79,
@@ -347,6 +578,7 @@ fn install_blocking(app: AppHandle) -> Result<ModelRuntimeState, String> {
             "Downloading foreground-isolation support",
         )?;
         if md5_file(&u2net)? != U2NET_MD5 {
+            let _ = fs::remove_file(&u2net);
             return Err("Foreground-isolation asset checksum verification failed.".into());
         }
 
@@ -360,7 +592,8 @@ fn install_blocking(app: AppHandle) -> Result<ModelRuntimeState, String> {
             "weightRevision": TRIPOSR_WEIGHT_REVISION,
             "weightSha256": TRIPOSR_WEIGHT_SHA256,
             "pythonVersion": python_version,
-            "sourceManifest": "verified-upstream-layout-v2"
+            "sourceManifest": "verified-upstream-layout-v2",
+            "modelDownloadMode": if alternate_model_url.is_some() { "verified-recovery-url" } else { "official-pinned" }
         });
         fs::write(
             staging.join("install.json"),
@@ -392,6 +625,7 @@ pub async fn install_model(
     app: AppHandle,
     state: State<'_, Arc<TripoInstallerState>>,
     model_id: String,
+    model_url: Option<String>,
 ) -> Result<ModelRuntimeState, String> {
     if model_id != "triposr" {
         return Err("This installer manages the audited TripoSR adapter only.".to_string());
@@ -402,7 +636,7 @@ pub async fn install_model(
             .lock
             .lock()
             .map_err(|_| "TripoSR installer lock is poisoned.".to_string())?;
-        install_blocking(app)
+        install_blocking(app, model_url)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -410,7 +644,7 @@ pub async fn install_model(
 
 #[cfg(test)]
 mod tests {
-    use super::SOURCE_FILES;
+    use super::{retry_delay, validate_https_url, SOURCE_FILES};
 
     #[test]
     fn source_manifest_uses_real_upstream_transformer_layout() {
@@ -423,5 +657,18 @@ mod tests {
         assert!(!SOURCE_FILES
             .iter()
             .any(|(path, _)| *path == "tsr/models/renderer.py"));
+    }
+
+    #[test]
+    fn recovery_model_url_must_be_https_without_credentials() {
+        assert!(validate_https_url("https://example.com/model.ckpt").is_ok());
+        assert!(validate_https_url("http://example.com/model.ckpt").is_err());
+        assert!(validate_https_url("https://user:pass@example.com/model.ckpt").is_err());
+    }
+
+    #[test]
+    fn retry_delay_increases_but_stays_bounded() {
+        assert!(retry_delay(2) > retry_delay(1));
+        assert_eq!(retry_delay(10), retry_delay(4));
     }
 }
