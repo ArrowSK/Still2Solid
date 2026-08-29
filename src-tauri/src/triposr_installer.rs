@@ -4,7 +4,7 @@ use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use sha1::{Digest as Sha1Digest, Sha1};
-use sha2::{Digest as Sha2Digest, Sha256};
+use sha2::Sha256;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -352,8 +352,10 @@ fn download_source_blob_fallback(
             .send()
         {
             Ok(response) if response.status().is_success() => {
-                let payload = response
-                    .json::<GitBlobResponse>()
+                let text = response
+                    .text()
+                    .map_err(|error| format!("Could not read GitHub blob fallback response: {error}"))?;
+                let payload = serde_json::from_str::<GitBlobResponse>(&text)
                     .map_err(|error| format!("GitHub blob fallback returned invalid JSON: {error}"))?;
                 if payload.sha != expected_blob || payload.encoding != "base64" {
                     return Err("GitHub blob fallback did not match the expected pinned object.".to_string());

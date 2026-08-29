@@ -98,8 +98,10 @@ fn latest_release(client: &Client) -> Result<GitHubRelease, String> {
             response.status()
         ));
     }
-    response
-        .json::<GitHubRelease>()
+    let text = response
+        .text()
+        .map_err(|error| format!("Could not read the GitHub release response: {error}"))?;
+    serde_json::from_str::<GitHubRelease>(&text)
         .map_err(|error| format!("GitHub returned an unreadable release response: {error}"))
 }
 

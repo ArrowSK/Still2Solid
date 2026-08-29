@@ -525,7 +525,6 @@ fn install_blocking(app: AppHandle, state: Arc<RuntimeState>) -> Result<ModelRun
     state_for(&app)
 }
 
-#[tauri::command]
 pub async fn install_model(
     app: AppHandle,
     state: State<'_, Arc<RuntimeState>>,
