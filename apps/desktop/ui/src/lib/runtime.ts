@@ -43,8 +43,8 @@ export async function getModelRuntimeStates(): Promise<ModelRuntimeState[]> {
   }
 }
 
-export function installModel(modelId: string): Promise<ModelRuntimeState> {
-  return invoke<ModelRuntimeState>('install_model', { modelId });
+export function installModel(modelId: string, modelUrl?: string): Promise<ModelRuntimeState> {
+  return invoke<ModelRuntimeState>('install_model', { modelId, modelUrl: modelUrl?.trim() || null });
 }
 
 export function uninstallModel(modelId: string): Promise<ModelRuntimeState> {
