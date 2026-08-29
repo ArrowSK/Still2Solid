@@ -90,7 +90,7 @@
     message = '';
     try {
       summary = await clearAppCache();
-      message = 'Still2Solid cache was cleared.';
+      message = 'Temporary Still2Solid files were cleared.';
     } catch (caught) {
       error = caught instanceof Error ? caught.message : String(caught);
       await refresh();
@@ -166,7 +166,8 @@
           {#if summary?.nativeAvailable}
             <div class="storage-grid">
               <div><span>Downloaded models</span><strong>{formatBytes(summary.modelsBytes)}</strong><small>{summary.installedModelDirectories} local model {summary.installedModelDirectories === 1 ? 'directory' : 'directories'}</small></div>
-              <div><span>Cache</span><strong>{formatBytes(summary.cacheBytes)}</strong><small>Temporary app files</small></div>
+              <div><span>Temporary work</span><strong>{formatBytes(summary.temporaryBytes)}</strong><small>Abandoned jobs or interrupted installs</small></div>
+              <div><span>Cache</span><strong>{formatBytes(summary.cacheBytes)}</strong><small>Reclaimable Still2Solid cache</small></div>
               <div><span>Other app data</span><strong>{formatBytes(summary.otherAppDataBytes)}</strong><small>Local Still2Solid data outside model storage</small></div>
             </div>
           {:else}
@@ -190,11 +191,11 @@
 
         <section class="action-card">
           <div>
-            <h3>Cache</h3>
-            <p>Clear temporary Still2Solid cache without touching installed models or your exported 3D files.</p>
+            <h3>Temporary files</h3>
+            <p>Clear Still2Solid cache plus abandoned generation workspaces and interrupted model-install staging. Installed models and exported GLB, OBJ, STL or 3MF files are not touched.</p>
           </div>
-          <button class="secondary" type="button" disabled={busy || disabled || !summary?.nativeAvailable || !summary?.cacheBytes} on:click={clearCache}>
-            Clear cache
+          <button class="secondary" type="button" disabled={busy || disabled || !summary?.nativeAvailable || (!summary?.cacheBytes && !summary?.temporaryBytes)} on:click={clearCache}>
+            Clear temporary files
           </button>
         </section>
 
@@ -202,7 +203,7 @@
           <div>
             <span class="eyebrow">COMPLETE UNINSTALL</span>
             <h3>Prepare Still2Solid for uninstall</h3>
-            <p>This removes downloaded models, Still2Solid app data, cache and local Still2Solid preferences. It does not delete exported GLB, OBJ, STL or 3MF files that you saved elsewhere.</p>
+            <p>This removes downloaded models, Still2Solid app data, cache, abandoned temporary work and local Still2Solid preferences. It does not delete exported GLB, OBJ, STL or 3MF files that you saved elsewhere.</p>
             <p>The application itself stays in Applications because macOS does not provide apps with an uninstall callback when they are moved to Trash.</p>
           </div>
 
@@ -245,7 +246,7 @@
   .storage-heading > div { display: grid; gap: 5px; }
   .storage-heading span, .storage-grid span, .storage-grid small { color: var(--muted); font-size: 12px; }
   .storage-heading strong { font-size: 22px; }
-  .storage-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 15px; }
+  .storage-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 15px; }
   .storage-grid > div { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #101319; }
   .storage-grid strong { font-size: 16px; }
   .action-card > div { max-width: 520px; }
