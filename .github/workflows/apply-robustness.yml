@@ -1,0 +1,96 @@
+name: Apply 0.8.3 robustness UI
+
+on:
+  push:
+    branches:
+      - 'fix/triposr-updater-0.8.3'
+    paths:
+      - '.github/workflows/apply-robustness.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/triposr-updater-0.8.3
+      - name: Patch first-run wizard and model recovery UI
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'Expected text not found in {path}: {old[:120]!r}')
+              file.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          app = 'apps/desktop/ui/src/App.svelte'
+          replace_once(
+              app,
+              "  import BackgroundAdvisor from './lib/BackgroundAdvisor.svelte';\n",
+              "  import BackgroundAdvisor from './lib/BackgroundAdvisor.svelte';\n  import FirstRunWizard from './lib/FirstRunWizard.svelte';\n",
+          )
+          replace_once(
+              app,
+              "  let settingsOpen = false;\n  let appVersion = 'development';",
+              "  let settingsOpen = false;\n  let firstRunWizardOpen = false;\n  let appVersion = 'development';",
+          )
+          replace_once(
+              app,
+              "    hardware = detectedHardware;\n    runtimeStates = detectedRuntimes;\n    appVersion = detectedVersion;",
+              "    hardware = detectedHardware;\n    runtimeStates = detectedRuntimes;\n    appVersion = detectedVersion;\n    if (localStorage.getItem('still2solid.firstRunComplete') !== '1') {\n      firstRunWizardOpen = true;\n    }",
+          )
+          replace_once(
+              app,
+              "<ModelManager\n  bind:open={modelManagerOpen}",
+              "<FirstRunWizard\n  bind:open={firstRunWizardOpen}\n  bind:preferredModelId={preferredProductionModelId}\n  bind:modelManagerOpen\n  {hardware}\n  assessments={modelAssessments}\n  {runtimeStates}\n/>\n\n<ModelManager\n  bind:open={modelManagerOpen}",
+          )
+
+          manager = 'apps/desktop/ui/src/lib/ModelManagerM8.svelte'
+          replace_once(
+              manager,
+              "  let managerError = '';\n  let sf3dToken = '';",
+              "  let managerError = '';\n  let failedModelId = '';\n  let alternateModelUrl = '';\n  let sf3dToken = '';",
+          )
+          replace_once(
+              manager,
+              "  async function install(candidateId: string, experimental: boolean) {\n    managerError = '';\n    busyModelId = candidateId;\n    installProgress = null;",
+              "  async function install(candidateId: string, experimental: boolean, modelUrl = '') {\n    managerError = '';\n    failedModelId = '';\n    busyModelId = candidateId;\n    installProgress = null;",
+          )
+          replace_once(
+              manager,
+              "        : await installModel(candidateId);\n      replaceRuntime(state);",
+              "        : await installModel(candidateId, modelUrl || undefined);\n      replaceRuntime(state);\n      alternateModelUrl = '';",
+          )
+          replace_once(
+              manager,
+              "    } catch (caught) {\n      managerError = caught instanceof Error ? caught.message : String(caught);\n      runtimeStates = await getModelRuntimeStates();",
+              "    } catch (caught) {\n      managerError = caught instanceof Error ? caught.message : String(caught);\n      failedModelId = candidateId;\n      runtimeStates = await getModelRuntimeStates();",
+          )
+          marker = """            {#if isBusy && installProgress?.modelId === candidate.manifest.id}\n              <div class=\"install-progress\" aria-live=\"polite\">"""
+          recovery = """            {#if !isBusy && failedModelId === candidate.manifest.id && candidate.manifest.id === 'triposr'}\n              <div class=\"recovery-install\">\n                <strong>Automatic install did not complete</strong>\n                <p>Still2Solid already retried transient failures and uses GitHub's pinned blob API if raw source delivery fails. You can retry the automatic route, or—only as a recovery option—paste a direct HTTPS link to the exact TripoSR <code>model.ckpt</code>. The file must still match Still2Solid's pinned SHA-256 or it will be deleted.</p>\n                <div class=\"recovery-actions\">\n                  <button class=\"secondary\" type=\"button\" on:click={() => install(candidate.manifest.id, assessment?.compatibility === 'memory-constrained')}>Retry automatic install</button>\n                  <label>Alternate model link\n                    <input type=\"url\" bind:value={alternateModelUrl} autocomplete=\"off\" spellcheck=\"false\" placeholder=\"https://…/model.ckpt\" />\n                  </label>\n                  <button class=\"secondary\" type=\"button\" disabled={!alternateModelUrl.trim().startsWith('https://')} on:click={() => install(candidate.manifest.id, assessment?.compatibility === 'memory-constrained', alternateModelUrl)}>Retry with this verified link</button>\n                </div>\n              </div>\n            {/if}\n\n""" + marker
+          replace_once(manager, marker, recovery)
+
+          replace_once(
+              manager,
+              "  .manager-error { margin: 12px 22px 0; padding: 12px 14px; border: 1px solid #68454a; border-radius: 12px; color: #ffc2c7; background: #281a1d; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }",
+              "  .manager-error { margin: 12px 22px 0; padding: 12px 14px; border: 1px solid #68454a; border-radius: 12px; color: #ffc2c7; background: #281a1d; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }\n  .recovery-install { display: grid; gap: 10px; margin-top: 13px; padding: 13px; border: 1px solid #6a5634; border-radius: 12px; background: #211d16; }\n  .recovery-install p { margin: 0; color: #d5c39f; font-size: 12px; line-height: 1.5; }\n  .recovery-install code { color: #f0d9aa; }\n  .recovery-actions { display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 9px; }\n  .recovery-actions label { display: grid; gap: 5px; color: var(--muted); font-size: 11px; }\n  .recovery-actions input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border); border-radius: 9px; background: #101319; color: var(--text); padding: 9px 10px; font: inherit; font-size: 12px; }",
+          )
+          replace_once(
+              manager,
+              "  @media (max-width: 760px) {",
+              "  @media (max-width: 760px) {\n    .recovery-actions { grid-template-columns: 1fr; align-items: stretch; }",
+          )
+      - name: Commit UI patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/ui/src/App.svelte apps/desktop/ui/src/lib/ModelManagerM8.svelte
+          git commit -m "feat: add first-run model wizard and install recovery UI"
+          git push origin HEAD:fix/triposr-updater-0.8.3
