@@ -76,15 +76,6 @@ jobs:
               raise SystemExit('Security updater insertion point was not found')
           text = text.replace(marker, marker + addition, 1)
           security.write_text(text, encoding='utf-8')
-
-          release = Path('.github/workflows/macos-package.yml')
-          text = release.read_text(encoding='utf-8')
-          marker = '          This release includes the macOS Apple Silicon package for M1/M2/M3/M4 Macs. Install it by opening the DMG and dragging Still2Solid to Applications. Python is bundled; production model weights are installed from inside the app when requested.\n'
-          addition = """\n          Still2Solid includes a manual in-app updater under Settings. It checks this repository's latest public GitHub Release on demand, verifies the downloaded DMG against the published SHA-256 and opens the normal macOS replacement installer.\n\n          The TripoSR installer uses an exact pinned upstream source-file manifest whose raw GitHub URLs and Git blob hashes are validated in CI, preventing missing/renamed source paths from reaching a release unnoticed.\n"""
-          if marker not in text:
-              raise SystemExit('Release-note insertion point was not found')
-          text = text.replace(marker, marker + addition, 1)
-          release.write_text(text, encoding='utf-8')
       - name: Refresh npm lock metadata
         run: npm install --package-lock-only --ignore-scripts
       - name: Refresh Cargo lock metadata
@@ -94,6 +85,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json apps/desktop/ui/src/App.svelte docs/SECURITY_PRIVACY.md .github/workflows/macos-package.yml
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json apps/desktop/ui/src/App.svelte docs/SECURITY_PRIVACY.md
           git commit -m "chore: prepare Still2Solid 0.8.3 release metadata"
           git push origin HEAD:fix/triposr-updater-0.8.3
