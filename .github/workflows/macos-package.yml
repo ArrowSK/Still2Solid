@@ -108,9 +108,13 @@ jobs:
 
           This release includes the macOS Apple Silicon package for M1/M2/M3/M4 Macs. Install it by opening the DMG and dragging Still2Solid to Applications. Python is bundled; production model weights are installed from inside the app when requested.
 
+          Still2Solid now includes a manual in-app updater under Settings. It checks this repository's latest public GitHub Release on demand, verifies the downloaded DMG against the published SHA-256 and opens the normal macOS replacement installer.
+
+          The TripoSR installer now uses the exact pinned upstream source-file layout. CI validates every raw GitHub source URL and Git blob hash used by the installer so a missing or renamed source path cannot silently reach a release again.
+
           Settings → Storage shows Still2Solid's local disk usage, can remove downloaded models, clear temporary files, and prepare a complete uninstall before the app is moved to Trash. Normal upgrades intentionally keep downloaded models.
 
-          This release also makes temporary storage self-cleaning: abandoned generation workspaces and interrupted model-install staging are removed on the next launch, pip's shared user download cache is disabled for model installation, and model support caches needed for offline inference stay inside model-owned Still2Solid storage.
+          Temporary storage is self-cleaning: abandoned generation workspaces and interrupted model-install staging are removed on the next launch, pip's shared user download cache is disabled for model installation, and model support caches needed for offline inference stay inside model-owned Still2Solid storage.
 
           ${SECURITY_NOTE}
 
